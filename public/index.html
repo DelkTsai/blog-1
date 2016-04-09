@@ -64,11 +64,11 @@
             
             <div class="posts">
                 
-                <h1 class="content-subhead">08 Apr 2016, 17:56</h1>
+                <h1 class="content-subhead">01 Jan 0001, 00:00</h1>
                 <section class="post">
                     <header class="post-header">
 
-                        <a href="http://localhost:1313/post/abc/first/" class="post-title">first</a>
+                        <a href="http://localhost:1313/post/mongodb-note/" class="post-title">php操作mongodb笔记</a>
 
                         <p class="post-meta">
                             
@@ -78,18 +78,36 @@
 
                     <div class="post-description">
 
-                        
+                        <p>大致把它分为了如下几块记录</p>
 
-                        <a href="/post/abc/first/">Read More…</a>
+<ul>
+<li><a href="https://github.com/zhengyin/blog/blob/master/code/php-mongo/curd.php" target="_blank">Mongodb CURD 操作</a></li>
+<li><a href="https://github.com/zhengyin/blog/blob/master/code/php-mongo/find.php" target="_blank">Mongodb 查询</a></li>
+<li><a href="https://github.com/zhengyin/blog/blob/master/code/php-mongo/modify.php" target="_blank">Mongodb 修改器操作</a></li>
+<li><a href="https://github.com/zhengyin/blog/blob/master/code/php-mongo/update.php" target="_blank">Mongodb 更多有关更新的内容</a></li>
+<li><a href="https://github.com/zhengyin/blog/blob/master/code/php-mongo/cursor.php" target="_blank">Mongodb 游标操作</a></li>
+</ul>
+
+<p>每一个对应一个类文件,你可以点以上链接查看到源码。</p>
+
+<p>测试的时候根据 GET 里面的 act 执行具体的方法，具体代码如下面这样。</p>
+
+<pre><code>$act = isset($_GET['act'])?$_GET['act']:'read';
+$o = new MongoDbCursor();
+$o-&gt;$act();
+</code></pre>
+
+
+                        <a href="/post/mongodb-note/">Read More…</a>
                       
                     </div>
                 </section>
                 
-                <h1 class="content-subhead">08 Apr 2016, 16:40</h1>
+                <h1 class="content-subhead">01 Jan 0001, 00:00</h1>
                 <section class="post">
                     <header class="post-header">
 
-                        <a href="http://localhost:1313/post/first/" class="post-title">first</a>
+                        <a href="http://localhost:1313/post/yaf-framework/" class="post-title">Yaf 框架视频教程</a>
 
                         <p class="post-meta">
                             
@@ -99,18 +117,30 @@
 
                     <div class="post-description">
 
-                        
+                        <h1 id="yaf-框架视频教程:a35b09ceae5d32b3a4552009c03ede68">Yaf 框架视频教程</h1>
 
-                        <a href="/post/first/">Read More…</a>
+<p>Yaf是我很喜欢的一个PHP框架，也是我目前所在公司用的PHP框架，以前录制过一些视频课程，前段时间起心，想把Yaf也录制一下，同时也可以分享下工作中怎么去使用Yaf的，所以就有了这套视频。目前17课，课程我尽量简短，所以时间不会太长，这套课程适合一些刚使用PHP开发不久的同学，如果你已经工作几年了，Yaf手册应该会更节约你的时间。</p>
+
+<h2 id="课程列表:a35b09ceae5d32b3a4552009c03ede68">课程列表</h2>
+
+<ol>
+<li><a href="http://bbs.houdunwang.com/thread-99589-1-1.html" target="_blank">Yaf介绍</a></li>
+<li><a  href="http://bbs.houdunwang.com/thread-99590-1-1.html" target="_blank">使用vagrant 统一开发环境</a></li>
+<li><a  href="http://bbs.houdunwang.com/thread-99591-1-1.html" target="_blank">Yaf的安装与ide配置</a></li>
+<li><a  href="http://bbs.houdunwang.com/thread-99592-1-1.html" target="_blank">Yaf的nginx配置</a></li>
+</ol>
+
+
+                        <a href="/post/yaf-framework/">Read More…</a>
                       
                     </div>
                 </section>
                 
-                <h1 class="content-subhead">21 Jun 2013, 11:27</h1>
+                <h1 class="content-subhead">01 Jan 0001, 00:00</h1>
                 <section class="post">
                     <header class="post-header">
 
-                        <a href="http://localhost:1313/nitro/" class="post-title">Nitro: A quick and simple profiler for Go</a>
+                        <a href="http://localhost:1313/post/mysql-master-slave/" class="post-title">mysql 主从复制，读写分离</a>
 
                         <p class="post-meta">
                             
@@ -120,12 +150,136 @@
 
                     <div class="post-description">
 
-                        <h1 id="nitro:6083a88ee3411b0d17ce02d738f69d47">Nitro</h1>
+                        <h2 id="mysql-主从复制-读写分离:f281d2723fb126937526c018d1f3d9eb">mysql 主从复制，读写分离</h2>
 
-<p>Quick and easy performance analyzer library for <a href="http://golang.org/">Go</a>.</p>
+<p>主从复制简单很好理解，简单来说就是把一台机器上的数据同步到另一台机器上面去，而读写分离也就是我们在操作mysql的时候，写的操作与读的操作不在作用于同一台数据库上，降低单机压力。</p>
+
+<p>首先我在本地装了三台虚拟机用于测试,它们的主机名和IP地址如下。</p>
+
+<pre><code> master   192.168.0.121        [ubuntu]
+ slave1   192.168.0.131        [debian]
+ slave2   192.168.0.141        [debian]
+</code></pre>
+
+<p>myql版本： 5.5</p>
+
+<p>以下关于mysql复制的一些内容摘自《高性能mysql》 一书，如果你对细节感兴趣，你可购买此书进行查阅。</p>
 
 
-                        <a href="/nitro/">Read More…</a>
+                        <a href="/post/mysql-master-slave/">Read More…</a>
+                      
+                    </div>
+                </section>
+                
+                <h1 class="content-subhead">01 Jan 0001, 00:00</h1>
+                <section class="post">
+                    <header class="post-header">
+
+                        <a href="http://localhost:1313/post/socketio-bid/" class="post-title">Socket.io的实时竞拍系统实现</a>
+
+                        <p class="post-meta">
+                            
+                            
+                        </p>
+                    </header>
+
+                    <div class="post-description">
+
+                        <p>某天张同学来到了一个拍卖网站，看中了一件心仪的拍品，于是他愉快的参与了竞价，并处于了领先的地位，随后张同学死死盯住拍品倒计时和领先者，在倒计时结束后发现领先者还是他自己，正当他欣喜若狂准备付款时，页面刷新发现拍品已被别人抢走。后来当张同学在次来到网站，便长了记性，开始无止境的F5~</p>
+
+<p>当然我们不能这样折腾我们的用户，那么如何实现拍品信息实时更新？ 要解决这个需求，实际上需要服务端主动“推” 信息到客户端。而客户端想要得到服务端推送的信息，实际上需要和服务端建立一个长连接，这样服务端才能通过这个连接把信息传递到客户端，也就是所谓“推”的概念，下面有篇文章详细介绍了WEB推送的系统的客户端实现方式：</p>
+
+<p><a href="http://www.ibm.com/developerworks/cn/web/wa-lo-comet/">Comet：基于 HTTP 长连接的“服务器推”技术</a></p>
+
+<p>Nginx也有相应的模块进行服务端的支持：</p>
+
+<p><a href="https://www.nginx.com/resources/wiki/modules/push_stream/">HTTP Push Stream</a></p>
+
+
+                        <a href="/post/socketio-bid/">Read More…</a>
+                      
+                    </div>
+                </section>
+                
+                <h1 class="content-subhead">01 Jan 0001, 00:00</h1>
+                <section class="post">
+                    <header class="post-header">
+
+                        <a href="http://localhost:1313/post/php-process-manage-script/" class="post-title">写一个PHP进程管理脚本</a>
+
+                        <p class="post-meta">
+                            
+                            
+                        </p>
+                    </header>
+
+                    <div class="post-description">
+
+                        <h2 id="写一个php进程管理脚本:d023dbfb12a7f9e4fc02119184930127">写一个PHP进程管理脚本</h2>
+
+<p>进程管理脚本有Shell干嘛非要去折腾个PHP呢，这个问题让我来回答我会这样说。</p>
+
+<p>用PHP来写很爽好吗，而且如果你的应用程序是PHP，这样会更灵活。总该为折腾找个理由，以上便是。</p>
+
+<p>废话不多说，咱开始. 首先准备一些基础知识</p>
+
+<p>###Shell部分</p>
+
+<pre><code>1.如何后台运行一个PHP脚本，格式如下  &quot;PHP执行路径  脚本路径  &gt;&gt; 日志路径  &amp; &quot; 如：/opt/app/php/bin/php worker.php &gt;&gt; /tmp/log.log &amp; 
+2.查看进程：&quot;ps aux | grep worker.php | grep -v grep&quot;   (跟着上面的例子)
+3.取得进程PID: &quot;ps aux | grep worker.php | grep -v grep | awk '{print $2}'&quot; 
+4.杀死一个进程: kill -9 {Pid}
+</code></pre>
+
+<p>###PHP部分</p>
+
+<pre><code>1.PHP执行Shell函数： shell_exec($cmd);  $cmd 就是Shell命令 返回Shell输出流
+2.直接在PHP脚本中执行Shell: `ps aux | grep worker.php`  返回Shell输出流
+</code></pre>
+
+
+                        <a href="/post/php-process-manage-script/">Read More…</a>
+                      
+                    </div>
+                </section>
+                
+                <h1 class="content-subhead">01 Jan 0001, 00:00</h1>
+                <section class="post">
+                    <header class="post-header">
+
+                        <a href="http://localhost:1313/post/yaf-yar/" class="post-title">在Yaf中使用Yar</a>
+
+                        <p class="post-meta">
+                            
+                            
+                        </p>
+                    </header>
+
+                    <div class="post-description">
+
+                        <h2 id="在yaf中使用yar:7ca2c6e4bdcb04df6c1f3d2a41a1f959">在Yaf中使用Yar</h2>
+
+<p>本文提到的两个东西，都是 PHP 大神 惠新宸 的作品。</p>
+
+<p>Yaf: PHP MVC框架  <a href="http://php.net/manual/zh/book.yaf.php">http://php.net/manual/zh/book.yaf.php</a></p>
+
+<p>Yar: PHP RPC框架    <a href="http://php.net/manual/zh/book.yar.php">http://php.net/manual/zh/book.yar.php</a></p>
+
+<p>看着篇文章之前你需要 Yaf,Yar 有所了解。</p>
+
+<p>随着网站的发展，原本的系统会逐渐的实现细分，而细分的系统之间并不是全无关联，这就涉及到各系统之前数据传输问题，Yar 就是帮助我们解决这些问题的。</p>
+
+<p>虽然 Yar已经把底层数据传输给我们解决了，并且调用十分简单,但要部署上线还是需要自行处理一些问题的，所谓“师傅领进门，修行靠个人”。</p>
+
+<p>大致来说我们要解决下面这三个问题：</p>
+
+<pre><code>1.数据传输安全校验
+2.接口定义
+3.数据格式
+</code></pre>
+
+
+                        <a href="/post/yaf-yar/">Read More…</a>
                       
                     </div>
                 </section>
