@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Posts on 郑印</title>
+    <link>http://localhost:1313/post/</link>
+    <description>Recent content in Posts on 郑印</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Fri, 08 Apr 2016 17:56:20 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/post/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>first</title>
+      <link>http://localhost:1313/post/abc/first/</link>
+      <pubDate>Fri, 08 Apr 2016 17:56:20 +0800</pubDate>
+      
+      <guid>http://localhost:1313/post/abc/first/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>first</title>
+      <link>http://localhost:1313/post/first/</link>
+      <pubDate>Fri, 08 Apr 2016 16:40:43 +0800</pubDate>
+      
+      <guid>http://localhost:1313/post/first/</guid>
+      <description></description>
+    </item>
+    
+  </channel>
+</rss>
