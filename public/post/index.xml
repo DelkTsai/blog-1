@@ -1,0 +1,1476 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Posts on 郑印</title>
+    <link>http://zhengyin.github.io/post/</link>
+    <description>Recent content in Posts on 郑印</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Sun, 10 Apr 2016 09:07:06 +0800</lastBuildDate>
+    <atom:link href="http://zhengyin.github.io/post/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Socket.io的实时竞拍系统实现</title>
+      <link>http://zhengyin.github.io/post/socketio-bid/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
+      
+      <guid>http://zhengyin.github.io/post/socketio-bid/</guid>
+      <description>&lt;p&gt;某天张同学来到了一个拍卖网站，看中了一件心仪的拍品，于是他愉快的参与了竞价，并处于了领先的地位，随后张同学死死盯住拍品倒计时和领先者，在倒计时结束后发现领先者还是他自己，正当他欣喜若狂准备付款时，页面刷新发现拍品已被别人抢走。后来当张同学在次来到网站，便长了记性，开始无止境的F5~&lt;/p&gt;
+
+&lt;p&gt;当然我们不能这样折腾我们的用户，那么如何实现拍品信息实时更新？ 要解决这个需求，实际上需要服务端主动“推” 信息到客户端。而客户端想要得到服务端推送的信息，实际上需要和服务端建立一个长连接，这样服务端才能通过这个连接把信息传递到客户端，也就是所谓“推”的概念，下面有篇文章详细介绍了WEB推送的系统的客户端实现方式：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://www.ibm.com/developerworks/cn/web/wa-lo-comet/&#34;&gt;Comet：基于 HTTP 长连接的“服务器推”技术&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Nginx也有相应的模块进行服务端的支持：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://www.nginx.com/resources/wiki/modules/push_stream/&#34;&gt;HTTP Push Stream&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;这里我们主要来说说通过Node平台下的Socket.io如何实现，首先来看下具体的业务场景是什么,一个最基本的实时竞拍系统应该包含以下三个场景：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;一个或者多个用户关注着某一个拍品&lt;/li&gt;
+&lt;li&gt;当其中某个用户出价后，更新数据库中该拍品的信息&lt;/li&gt;
+&lt;li&gt;将最新的拍品信息反应到关注该拍品用户的客户端上&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;那么根据这三个场景，能够确认推送的一个大概思路，也就是 “当拍品出价成功后，取得最新的拍品信息，推送给关注该拍品的所有用户”，基于这个思路可以确定一个大概的推送流程图:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://upload-images.jianshu.io/upload_images/1639948-8c0ede3a86d71389.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240&#34; alt=&#34;推送流程图.png&#34; /&gt;&lt;/p&gt;
+
+&lt;p&gt;这个流程图中分为4个部分：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;客户端(接受推送消息，已经出价)&lt;/li&gt;
+&lt;li&gt;竞价接口(处理竞价逻辑，加入拍品到推送队列)&lt;/li&gt;
+&lt;li&gt;队列处理(取出需要推送的拍品调用推送API)&lt;/li&gt;
+&lt;li&gt;推送服务(提供socket.io的服务端供客户端进行&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;连接，并提供一组推送的内网API供应用程序调用)&lt;/p&gt;
+
+&lt;p&gt;根据以上流程，竞价接口以及队列处理我们可以采用任意的语言去实现，这里不在延伸。这两部分中队列处理，根据具体业务可以省去，这里引入队列处理的目的主要是考虑到，推送服务本身与竞价流程解耦，以及当推送服务故障时，失败队列的维护,当然如果使用队列，也需要考虑队列处理的及时性，避免推送信息的不及时。&lt;/p&gt;
+
+&lt;p&gt;下面来看看推送服务如何构建:&lt;/p&gt;
+
+&lt;p&gt;(以下均是伪代码,只为说明具体思路)&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;
+      var http = require(&amp;quot;http&amp;quot;);
+      http.globalAgent.maxSockets = Infinity;
+      var koa = require(&#39;koa&#39;);
+      var app = koa();
+      var bodyParser = require(&#39;koa-bodyparser&#39;);
+      var route = require(&#39;koa-route&#39;);
+      var io = require(&#39;socket.io&#39;);
+      var ioRedis = require(&#39;socket.io-redis&#39;);
+      var ioEmitter = require(&#39;socket.io-emitter&#39;)({ host: &#39;127.0.0.1&#39;, port: &#39;6379&#39; });
+      var server = http.createServer(app.callback());
+
+      io = io(server);
+
+      io.adapter(ioRedis({ host :&#39;127.0.0.1&#39;, prot :&#39;6379&#39;}));
+
+      /**************  推送API ******************/
+      app.use(bodyParser());
+      app.use(route.post(&#39;/pub&#39;, function *(next){
+
+          var data = this.request.body;
+
+          if(!data || typeof data != &#39;object&#39;){
+              this.throw(&#39;data error&#39;, 400);
+          }
+
+          var room = data.itemId;
+          var channel = data.channel;
+          var message = data.message;
+
+          ioEmitter.to(room).emit(channel,message);   
+
+          this.body = &#39;ok&#39;;
+          
+      }));
+      app.use(function *(){
+        this.response.status = 404;
+      })
+      /*****************************************/
+
+      /*************Socket.io Server ***********/
+      io.use(function(socket,next){
+          var itemId = socket.handshake.query.itemId;
+          socket.room = itemId;
+          return next();
+      });
+      io.on(&#39;connection&#39;,function(socket){
+          socket.join(socket.room);
+      });
+      /*****************************************/
+
+
+
+
+      server.listen(3000,function(){});
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;推送服务实际上起到的是一个中间层的作用，下面看下客户端与服务端如何和它配合：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;客户端代码&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code&gt;  &amp;lt;script&amp;gt;
+    var socket = io(&#39;http://推送服务地址:3000?itemId=100&#39;);
+    socket.on(&#39;auction&#39;, function (data) {
+          //调用 Dom 更新拍品信息
+    });
+  &amp;lt;/script&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;客户端在连接是指明了itemId(假设它是拍品ID),这样在推送服务能够对其进行房间的划分,也就是在 socket.join(socket.room) 的时候。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;服务端代码(PHP)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code&gt;        
+	private function http($data){
+               /** 
+                    $data = array(
+                          &#39;itemId&#39;=&amp;gt;100,            //指明推送拍品
+                          &#39;channel&#39;=&amp;gt;&#39;auction&#39;,  //指明推送到的渠道
+                          &#39;message&#39;=&amp;gt;array( )  //最新的拍品信息
+                    );
+               */
+
+		$server = $this-&amp;gt;getServer();  // http://127.0.0.1:3000/pub
+		$ch = curl_init();
+		curl_setopt($ch, CURLOPT_URL, $server);
+		curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+		curl_setopt($ch, CURLOPT_POSTFIELDS,http_build_query($data));
+		curl_setopt($ch, CURLOPT_HEADER, 0);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+		$response = curl_exec($ch);
+		if(curl_errno($ch)){
+			throw new \Exception(&#39;curl_error  &#39;.curl_error($ch));
+		}else{
+			if(strtolower($response) == &#39;ok&#39;){    
+				curl_close($ch);
+				return true;
+			}else{
+				throw new \Exception(&#39;response_error  &#39;.$response);
+		}
+			}
+		curl_close($ch);
+		return false;
+	}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;服务端在推送时，调用 &amp;ldquo;&lt;a href=&#34;http://127.0.0.1:3000/pub&amp;quot;&#34;&gt;http://127.0.0.1:3000/pub&amp;quot;&lt;/a&gt; ，也就是有 koa 搭建的http推送API ，并传入想应格式的数据，指明推送的拍品，渠道，信息。这样在 koa 接受到请求后，调用    ioEmitter.to(room).emit(channel,message);    将信息推送到客户端，这样就走完了一个流程。&lt;/p&gt;
+
+&lt;p&gt;总结：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;实时推送实际上就是消息的发布/订阅，客户端是消息订阅方，服务端是消息的发布方&lt;/li&gt;
+&lt;li&gt;推送服务也就是消息发布/订阅的服务&lt;/li&gt;
+&lt;li&gt;推送与竞价可以是两套不同业务，应该考虑解耦&lt;/li&gt;
+&lt;li&gt;使用Socket.io做Web的实时推送，代码量小，可控性高&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Yaf 框架视频教程</title>
+      <link>http://zhengyin.github.io/post/yaf-framework/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
+      
+      <guid>http://zhengyin.github.io/post/yaf-framework/</guid>
+      <description>
+
+&lt;h1 id=&#34;yaf-框架视频教程:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;Yaf 框架视频教程&lt;/h1&gt;
+
+&lt;p&gt;Yaf是我很喜欢的一个PHP框架，也是我目前所在公司用的PHP框架，以前录制过一些视频课程，前段时间起心，想把Yaf也录制一下，同时也可以分享下工作中怎么去使用Yaf的，所以就有了这套视频。目前17课，课程我尽量简短，所以时间不会太长，这套课程适合一些刚使用PHP开发不久的同学，如果你已经工作几年了，Yaf手册应该会更节约你的时间。&lt;/p&gt;
+
+&lt;h2 id=&#34;课程列表:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;课程列表&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://bbs.houdunwang.com/thread-99589-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf介绍&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99590-1-1.html&#34; target=&#34;_blank&#34;&gt;使用vagrant 统一开发环境&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99591-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf的安装与ide配置&lt;/a&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99592-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf的nginx配置&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99593-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf运行流程&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99687-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf,Bootstarp介绍&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a href=&#34;http://bbs.houdunwang.com/thread-99696-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf配置&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99697-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf类库的加载规则&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99698-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf模块与控制器&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a href=&#34;http://bbs.houdunwang.com/thread-99699-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf路由&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99700-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf视图&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99701-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf请求与响应&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99702-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf模型的使用&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99703-1-1.html&#34; target=&#34;_blank&#34;&gt;使用Yaf过程中，目录结构的划分&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99854-1-1.html&#34; target=&#34;_blank&#34;&gt;使用Yaf过程中，保持开发模式的统一&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99875-1-1.html&#34; target=&#34;_blank&#34;&gt;在Yaf中定义内网接口，Yar的使用&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99900-1-1.html&#34; target=&#34;_blank&#34;&gt;在Yaf中使用命令行执行PHP&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;###&lt;a style=&#34;color:#ccc;&#34; href=&#34;javascript:void(0);&#34; target=&#34;_blank&#34;&gt;下载整套视频教程&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;相关资源下载:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;相关资源下载&lt;/h2&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://pan.baidu.com/s/1hqk3pcg&#34; target=&#34;_blank&#34;&gt;课程中使用的开发环境Box文件&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://pan.baidu.com/s/1dD13CEt&#34; target=&#34;_blank&#34;&gt;课程中使用的源代码&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zhengyin/izhengyin-yaf-libs&#34; target=&#34;_blank&#34;&gt;博客所使用的Yaf类库&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;相关参考链接:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;相关参考链接&lt;/h2&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.laruence.com/manual/&#34; target=&#34;_blank&#34;&gt;Yaf手册&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://php.net/manual/zh/book.yar.php&#34; target=&#34;_blank&#34;&gt;Yar手册&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.laruence.com/2012/09/15/2779.html&#34; target=&#34;_blank&#34;&gt;Yar介绍博文&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://segmentfault.com/a/1190000000264347&#34; target=&#34;_blank&#34;&gt;使用 Vagrant 打造跨平台开发环境&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>mysql 主从复制，读写分离</title>
+      <link>http://zhengyin.github.io/post/mysql-master-slave/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
+      
+      <guid>http://zhengyin.github.io/post/mysql-master-slave/</guid>
+      <description>
+
+&lt;h2 id=&#34;mysql-主从复制-读写分离:f281d2723fb126937526c018d1f3d9eb&#34;&gt;mysql 主从复制，读写分离&lt;/h2&gt;
+
+&lt;p&gt;主从复制简单很好理解，简单来说就是把一台机器上的数据同步到另一台机器上面去，而读写分离也就是我们在操作mysql的时候，写的操作与读的操作不在作用于同一台数据库上，降低单机压力。&lt;/p&gt;
+
+&lt;p&gt;首先我在本地装了三台虚拟机用于测试,它们的主机名和IP地址如下。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt; master   192.168.0.121        [ubuntu]
+ slave1   192.168.0.131        [debian]
+ slave2   192.168.0.141        [debian]
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;myql版本： 5.5&lt;/p&gt;
+
+&lt;p&gt;以下关于mysql复制的一些内容摘自《高性能mysql》 一书，如果你对细节感兴趣，你可购买此书进行查阅。&lt;/p&gt;
+
+&lt;p&gt;###MYSQL主从复制&lt;/p&gt;
+
+&lt;p&gt;#####复制解决的问题&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;1.数据分布
+2.负载均衡
+3.备份
+4.高可用性和故障切换
+5.mysql升级测试
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;#####复制如何工作
+    1.在主库上把数据更改记录到二进制日志(Binary Log)中(这些记录被称为二进制日志事件)。
+    2.备库将主库上的日志复制到自己的中继日志(Relay Log)中。
+    3.备库读取中继日志中的事件，将其重放到备库数据之上。&lt;/p&gt;
+
+&lt;p&gt;#####复制配置&lt;/p&gt;
+
+&lt;p&gt;######1.创建复制账号
+在主库上创建复制账号,在mysql终端中键入如下命令即可
+&lt;pre&gt;
+&lt;/code&gt;
+GRANT REPLICATION SLAVE  , REPLICATION  CLIENT ON &lt;em&gt;.&lt;/em&gt; TO slave1 @&amp;ldquo;192.168.0.131&amp;rdquo;  IDENTFIED BY &amp;ldquo;password&amp;rdquo; ;
+&lt;/code&gt;
+&lt;/pre&gt;
+配置完成后在 从库上 连接下主库，避免后面出现一些不必要的麻烦,如同下面这样。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;mysql -h192.168.0.121 -uslave1 -p&amp;quot;password&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;如果连接不成功，检查下主服务器上是否开放了对外连接，通常是防火墙设置问题。&lt;/p&gt;
+
+&lt;p&gt;######2.配置主库和备库
+&lt;pre&gt;
+    &lt;code&gt;&lt;br /&gt;
+主库配置：&lt;br /&gt;
+[mysqld]
+server-id = 121            //保证唯一性，这里我取 ip 的最后几位
+log_bin = /data/mysql/logs/mysql-bin  // 二进制日志存放位置
+    &lt;/code&gt;
+&lt;/pre&gt;&lt;br /&gt;
+ 配置完成后从启主库，进入终端键入命令&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;mysql&amp;gt; show master status;
++------------------+----------+--------------+------------------+
+| File             | Position | Binlog_Do_DB | Binlog_Ignore_DB |
++------------------+----------+--------------+------------------+
+| mysql-bin.000011 |     236 |              |                  |
++------------------+----------+--------------+------------------+                 
+留意下 File  ,Position 一会要用到，其中 File 是二进制日志名， Posttion 是数据点的位置
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;######从库配置:
+&lt;pre&gt;
+    &lt;code&gt;&lt;br /&gt;
+主库配置：&lt;br /&gt;
+[mysqld]
+server-id = 131
+log_bin = /data/mysql/logs/mysql-bin
+relay_log = /data/mysql/logs/mysql-relay-bin    //中继日志
+log_slave_updates = 1    //允许备库将其重放的事件也记录到自身二进制日志中
+read_only = 1        //只读
+    &lt;/code&gt;
+&lt;/pre&gt;&lt;/p&gt;
+
+&lt;p&gt;######3.启动复制
+从库配置完后重启下mysql，进入终端[从库],键入如下命令:
+&lt;pre&gt;&lt;code&gt;
+mysql&amp;gt; CHANGE MASTER TO MASTER_HOST=&amp;lsquo;192.168.0.121&amp;rsquo;,
+    -&amp;gt; MASTER_USER=&amp;lsquo;slave1&amp;rsquo;,
+    -&amp;gt; MASTER_PASSWORD=&amp;lsquo;password&amp;rsquo;,
+    -&amp;gt; MASTER_LOG_FILE=&amp;lsquo;mysql-bin.000011&amp;rsquo;,
+    -&amp;gt; MASTER_LOG_POS=0;
+ #MASTER_LOG_FILE 指定主库二进制日志文件
+ #MASTER_LOG_POS 指定复制开始的位置
+&lt;/code&gt;&lt;/pre&gt;
+这一步完成后，下面这个命令查看从库状态
+&lt;pre&gt;&lt;code&gt;
+mysql&amp;gt; SHOW SLAVE STATUS\G;
+*************************** 1. row ***************************
+       Slave_IO_State:
+        &amp;hellip;&amp;hellip;&amp;hellip;.
+       Slave_IO_Running: No
+       Slave_SQL_Running: No
+       &amp;hellip;&amp;hellip;&amp;hellip;.
+&lt;/code&gt;&lt;/pre&gt;
+这几个地方显示着我们的复制还未开始,接下来启动复制.
+&lt;pre&gt;&lt;code&gt;
+mysql&amp;gt; START SLAVE;
+mysql&amp;gt; SHOW SLAVE STATUS\G;
+*************************** 1. row **************************
+ Slave_IO_State: Waiting for master to send event
+ Slave_IO_Running: Yes
+ Slave_SQL_Running: Yes
+&lt;/code&gt;&lt;/pre&gt;
+这样复制就开始运行了 ,创建一些数据测试下，下面的SQL就不解释了。
+主库：
+&lt;pre&gt;&lt;code&gt;
+mysql&amp;gt; create database test charset utf8;
+Query OK, 1 row affected (0.00 sec)&lt;/p&gt;
+
+&lt;p&gt;mysql&amp;gt; use test
+Database changed
+mysql&amp;gt; create table user (uid int unsigned not null primary key auto_increment,name char(40) not null default &amp;ldquo;);
+Query OK, 0 rows affected (0.01 sec)&lt;/p&gt;
+
+&lt;p&gt;mysql&amp;gt; insert into user set name=&amp;lsquo;szws01&amp;rsquo;;
+Query OK, 1 row affected (0.00 sec)&lt;/p&gt;
+
+&lt;p&gt;mysql&amp;gt; select * from user;
++&amp;mdash;&amp;ndash;+&amp;mdash;&amp;mdash;&amp;ndash;+
+| uid | name   |
++&amp;mdash;&amp;ndash;+&amp;mdash;&amp;mdash;&amp;ndash;+
+|   1 | szws01 |
++&amp;mdash;&amp;ndash;+&amp;mdash;&amp;mdash;&amp;ndash;+
+1 row in set (0.00 sec)
+&lt;/code&gt;&lt;/pre&gt;
+从库：
+&lt;pre&gt;&lt;code&gt;
+mysql&amp;gt; use test
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A&lt;/p&gt;
+
+&lt;p&gt;Database changed
+mysql&amp;gt; show tables;
++&amp;mdash;&amp;mdash;&amp;mdash;&amp;mdash;&amp;mdash;-+
+| Tables_in_test |
++&amp;mdash;&amp;mdash;&amp;mdash;&amp;mdash;&amp;mdash;-+
+| user           |
++&amp;mdash;&amp;mdash;&amp;mdash;&amp;mdash;&amp;mdash;-+
+1 row in set (0.00 sec)&lt;/p&gt;
+
+&lt;p&gt;mysql&amp;gt; select * from user;
++&amp;mdash;&amp;ndash;+&amp;mdash;&amp;mdash;&amp;ndash;+
+| uid | name   |
++&amp;mdash;&amp;ndash;+&amp;mdash;&amp;mdash;&amp;ndash;+
+|   1 | szws01 |
++&amp;mdash;&amp;ndash;+&amp;mdash;&amp;mdash;&amp;ndash;+
+1 row in set (0.00 sec)
+&lt;/code&gt;&lt;/pre&gt;&lt;/p&gt;
+
+&lt;p&gt;自此主从就配置完成了，当然这个配置很简单，这是基于主服务器，与从服务器都是新安装的mysql来的。&lt;/p&gt;
+
+&lt;p&gt;###使用Amoeba做读写分离&lt;/p&gt;
+
+&lt;p&gt;######AMOEBA是什么
+   • 专注于分布式数据库代理层（ Database Proxy） 开发&lt;/p&gt;
+
+&lt;p&gt;• 座落与 Client、 service之间,对客户端透明&lt;/p&gt;
+
+&lt;p&gt;• 具有负载均衡、高可用性、可路由相关请求到目标数据库、 可并发请求多台数 据库合并结果&lt;/p&gt;
+
+&lt;p&gt;• 通过Amoeba你能够完成多数据源的高可用、负载均衡、数据切片的功能&lt;/p&gt;
+
+&lt;p&gt;######读写分离结构图&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://izhengyin.com/static/images/01.jpg&#34; alt=&#34;Mou icon&#34; /&gt;&lt;/p&gt;
+
+&lt;p&gt;######准备工作&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;    在线文档: http://docs.hexnova.com/amoeba/       
+    下载地址：http://sourceforge.net/projects/amoeba/files/
+    本文使用的版本是： amoeba-mysql-binary-2.2.0[点击可下载]
+    使用之前需要安装 java jdk ,本文使用的是 jdk1.7
+    Amoeba安装很简单
+            1.下载对应的版本
+            2.解压到安装目录,本文解压到了 /opt/app/amoeba
+            3.进入   /opt/app/amoeba/bin  执行命令:
+                 ➜  bin  pwd
+                 /opt/app/amoeba/bin
+                 ➜  bin  ./amoeba
+                 amoeba start|stop
+                 看到以上信息就成了，这里我为了方便把该目录加到环境变量PATH里：
+                 vim ~/.zshrc
+                 export PATH=&amp;quot;$JAVA_HOME/bin:/usr/local/sbin:/opt/app/amoeba/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/mysql/bin&amp;quot; 
+                 source ~/.zshrc     #根据你的shell而定
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;######Amoeba主从配置
+        Amoeba 主要有三个配置文件
+                1.dbServers.xml            //配置一些集群上mysql的数据库连接参数
+                2.amoeba.xml              //Amoeba自身的配置，主机，端口，账号，密码,以及如何加载server,rule等。
+                3.rule.xml                     //路由配置，主要是数据切片的一些配置，读写分离这块可以不用。
+                配置文件放在   /opt/app/amoeba/conf/ 下。
+               xml的配置文件看起来有些乱，看横线分割部分吧。&lt;/p&gt;
+
+&lt;p&gt;dbServers.xml 配置&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;    &amp;lt;?xml version=&amp;quot;1.0&amp;quot; encoding=&amp;quot;gbk&amp;quot;?&amp;gt; 
+
+    &amp;lt;!DOCTYPE amoeba:dbServers SYSTEM &amp;quot;dbserver.dtd&amp;quot;&amp;gt; 
+    &amp;lt;amoeba:dbServers xmlns:amoeba=&amp;quot;http://amoeba.meidusa.com/&amp;quot;&amp;gt; 
+    &amp;lt;dbServer name=&amp;quot;abstractServer&amp;quot; abstractive=&amp;quot;true&amp;quot;&amp;gt; 
+    &amp;lt;factoryConfig class=&amp;quot;com.meidusa.amoeba.mysql.net.MysqlServerConnectionFactory&amp;quot;&amp;gt; 
+    &amp;lt;property name=&amp;quot;manager&amp;quot;&amp;gt;${defaultManager}&amp;lt;/property&amp;gt;
+    &amp;lt;property name=&amp;quot;sendBufferSize&amp;quot;&amp;gt;64&amp;lt;/property&amp;gt;
+    &amp;lt;property name=&amp;quot;receiveBufferSize&amp;quot;&amp;gt;128&amp;lt;/property&amp;gt;
+
+    &amp;lt;!-- mysql 连接主配置  --&amp;gt;
+
+    &amp;lt;property name=&amp;quot;port&amp;quot;&amp;gt;3306&amp;lt;/property&amp;gt;
+    &amp;lt;property name=&amp;quot;schema&amp;quot;&amp;gt;test&amp;lt;/property&amp;gt;
+    &amp;lt;!-- mysql user --&amp;gt;
+    &amp;lt;property name=&amp;quot;user&amp;quot;&amp;gt;root&amp;lt;/property&amp;gt;
+    &amp;lt;!-- mysql password --&amp;gt;
+    &amp;lt;property name=&amp;quot;password&amp;quot;&amp;gt;password&amp;lt;/property&amp;gt;
+
+
+
+    &amp;lt;/factoryConfig&amp;gt; 
+    &amp;lt;poolConfig class=&amp;quot;com.meidusa.amoeba.net.poolable.PoolableObjectPool&amp;quot;&amp;gt; 
+    &amp;lt;property name=&amp;quot;maxActive&amp;quot;&amp;gt;500&amp;lt;/property&amp;gt;
+    &amp;lt;property name=&amp;quot;maxIdle&amp;quot;&amp;gt;500&amp;lt;/property&amp;gt;
+    &amp;lt;property name=&amp;quot;minIdle&amp;quot;&amp;gt;10&amp;lt;/property&amp;gt;
+    &amp;lt;property name=&amp;quot;minEvictableIdleTimeMillis&amp;quot;&amp;gt;600000&amp;lt;/property&amp;gt;
+    &amp;lt;property name=&amp;quot;timeBetweenEvictionRunsMillis&amp;quot;&amp;gt;600000&amp;lt;/property&amp;gt;
+    &amp;lt;property name=&amp;quot;testOnBorrow&amp;quot;&amp;gt;true&amp;lt;/property&amp;gt;
+    &amp;lt;property name=&amp;quot;testOnReturn&amp;quot;&amp;gt;true&amp;lt;/property&amp;gt;
+    &amp;lt;property name=&amp;quot;testWhileIdle&amp;quot;&amp;gt;true&amp;lt;/property&amp;gt;
+    &amp;lt;/poolConfig&amp;gt; 
+    &amp;lt;/dbServer&amp;gt; 
+
+    &amp;lt;!-- 单个 server 配置 ,账号密码继承了主配置 --&amp;gt;
+    &amp;lt;dbServer name=&amp;quot;master&amp;quot; parent=&amp;quot;abstractServer&amp;quot;&amp;gt; 
+    &amp;lt;factoryConfig&amp;gt;
+    &amp;lt;property name=&amp;quot;ipAddress&amp;quot;&amp;gt;192.168.0.121&amp;lt;/property&amp;gt;
+    &amp;lt;/factoryConfig&amp;gt;
+    &amp;lt;/dbServer&amp;gt; 
+    &amp;lt;dbServer name=&amp;quot;slave1&amp;quot; parent=&amp;quot;abstractServer&amp;quot;&amp;gt;
+    &amp;lt;factoryConfig&amp;gt;
+    &amp;lt;property name=&amp;quot;ipAddress&amp;quot;&amp;gt;192.168.0.131&amp;lt;/property&amp;gt;
+    &amp;lt;/factoryConfig&amp;gt;
+    &amp;lt;/dbServer&amp;gt; 
+    &amp;lt;dbServer name=&amp;quot;slave2&amp;quot; parent=&amp;quot;abstractServer&amp;quot;&amp;gt;
+    &amp;lt;factoryConfig&amp;gt;
+    &amp;lt;property name=&amp;quot;ipAddress&amp;quot;&amp;gt;192.168.0.141&amp;lt;/property&amp;gt;
+    &amp;lt;/factoryConfig&amp;gt;
+    &amp;lt;/dbServer&amp;gt;
+
+    &amp;lt;!-- 单独为从库进行区分,按照 ROUNDROBIN  做负载均衡--&amp;gt;
+    &amp;lt;dbServer name=&amp;quot;virtualSlave&amp;quot; virtual=&amp;quot;true&amp;quot;&amp;gt; 
+    &amp;lt;poolConfig class=&amp;quot;com.meidusa.amoeba.server.MultipleServerPool&amp;quot;&amp;gt;
+    &amp;lt;!-- Load balancing strategy: 1=ROUNDROBIN , 2=WEIGHTBASED , 3=HA--&amp;gt;
+    &amp;lt;property name=&amp;quot;loadbalance&amp;quot;&amp;gt;1&amp;lt;/property&amp;gt;
+    &amp;lt;!-- Separated by commas,such as: server1,server2,server1 --&amp;gt;
+    &amp;lt;property name=&amp;quot;poolNames&amp;quot;&amp;gt;slave1,slave2&amp;lt;/property&amp;gt;
+    &amp;lt;/poolConfig&amp;gt;
+    &amp;lt;/dbServer&amp;gt;
+    &amp;lt;/amoeba:dbServers&amp;gt; 
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;amoeba.xml 配置&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;    &amp;lt;!-- service class must implements com.meidusa.amoeba.service.Service --&amp;gt;
+    &amp;lt;service name=&amp;quot;Amoeba for Mysql&amp;quot; class=&amp;quot;com.meidusa.amoeba.net.ServerableConnectionManager&amp;quot;&amp;gt;
+            &amp;lt;!--- 连接的ip和端口  ---&amp;gt;
+
+            &amp;lt;!-- port --&amp;gt;
+            &amp;lt;property name=&amp;quot;port&amp;quot;&amp;gt;8066&amp;lt;/property&amp;gt;
+            &amp;lt;!-- bind ipAddress --&amp;gt;
+            &amp;lt;property name=&amp;quot;ipAddress&amp;quot;&amp;gt;127.0.0.1&amp;lt;/property&amp;gt;
+
+
+            &amp;lt;property name=&amp;quot;manager&amp;quot;&amp;gt;${clientConnectioneManager}&amp;lt;/property&amp;gt;
+
+            &amp;lt;property name=&amp;quot;connectionFactory&amp;quot;&amp;gt;
+                    &amp;lt;bean class=&amp;quot;com.meidusa.amoeba.mysql.net.MysqlClientConnectionFactory&amp;quot;&amp;gt;
+                            &amp;lt;property name=&amp;quot;sendBufferSize&amp;quot;&amp;gt;128&amp;lt;/property&amp;gt;
+                            &amp;lt;property name=&amp;quot;receiveBufferSize&amp;quot;&amp;gt;64&amp;lt;/property&amp;gt;
+                    &amp;lt;/bean&amp;gt;
+            &amp;lt;/property&amp;gt;
+
+            &amp;lt;property name=&amp;quot;authenticator&amp;quot;&amp;gt;
+                    &amp;lt;bean class=&amp;quot;com.meidusa.amoeba.mysql.server.MysqlClientAuthenticator&amp;quot;&amp;gt;
+
+           &amp;lt;!--- 连接的用户与密码 ---&amp;gt;
+                            &amp;lt;property name=&amp;quot;user&amp;quot;&amp;gt;root&amp;lt;/property&amp;gt;
+
+                            &amp;lt;property name=&amp;quot;password&amp;quot;&amp;gt;123456&amp;lt;/property&amp;gt;
+
+                            &amp;lt;property name=&amp;quot;filter&amp;quot;&amp;gt;
+                                    &amp;lt;bean class=&amp;quot;com.meidusa.amoeba.server.IPAccessController&amp;quot;&amp;gt;
+                                            &amp;lt;property name=&amp;quot;ipFile&amp;quot;&amp;gt;${amoeba.home}/conf/access_list.conf&amp;lt;/property&amp;gt;
+                                    &amp;lt;/bean&amp;gt;
+                            &amp;lt;/property&amp;gt;
+                    &amp;lt;/bean&amp;gt;
+            &amp;lt;/property&amp;gt;
+
+    &amp;lt;/service&amp;gt;
+
+    .................................
+
+    &amp;lt;queryRouter class=&amp;quot;com.meidusa.amoeba.mysql.parser.MysqlQueryRouter&amp;quot;&amp;gt;
+
+            &amp;lt;property name=&amp;quot;ruleLoader&amp;quot;&amp;gt;
+                    &amp;lt;bean class=&amp;quot;com.meidusa.amoeba.route.TableRuleFileLoader&amp;quot;&amp;gt;
+                            &amp;lt;property name=&amp;quot;ruleFile&amp;quot;&amp;gt;${amoeba.home}/conf/rule.xml&amp;lt;/property&amp;gt;
+                            &amp;lt;property name=&amp;quot;functionFile&amp;quot;&amp;gt;${amoeba.home}/conf/ruleFunctionMap.xml&amp;lt;/property&amp;gt;
+                    &amp;lt;/bean&amp;gt;
+            &amp;lt;/property&amp;gt;
+
+            &amp;lt;property name=&amp;quot;sqlFunctionFile&amp;quot;&amp;gt;${amoeba.home}/conf/functionMap.xml&amp;lt;/property&amp;gt;
+            &amp;lt;property name=&amp;quot;LRUMapSize&amp;quot;&amp;gt;1500&amp;lt;/property&amp;gt;
+            &amp;lt;property name=&amp;quot;defaultPool&amp;quot;&amp;gt;master&amp;lt;/property&amp;gt;
+            &amp;lt;!-- 读写配置 --&amp;gt;
+            &amp;lt;property name=&amp;quot;writePool&amp;quot;&amp;gt;master&amp;lt;/property&amp;gt;
+            &amp;lt;property name=&amp;quot;readPool&amp;quot;&amp;gt;virtualSlave&amp;lt;/property&amp;gt;
+
+            &amp;lt;property name=&amp;quot;needParse&amp;quot;&amp;gt;true&amp;lt;/property&amp;gt;
+    &amp;lt;/queryRouter&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;启动Amoeba ：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;➜  conf  amoeba start
+log4j:WARN log4j config load completed from file:/opt/app/amoeba/conf/log4j.xml
+  2015-01-11 15:19:17,732 INFO  context.MysqlRuntimeContext - Amoeba for Mysql current versoin=5.1.45-mysql-amoeba-proxy-2.2.0
+  log4j:WARN ip access config load completed from file:/opt/app/amoeba/conf/access_list.conf
+  2015-01-11 15:19:18,053 INFO  net.ServerableConnectionManager - Amoeba for Mysql listening on /127.0.0.1:8066.
+  2015-01-11 15:19:18,059 INFO  net.ServerableConnectionManager - Amoeba Monitor Server listening on /127.0.0.1:894.
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;打开一个新终端,连接Amoeba:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;➜  amoeba  mysql -h127.0.0.1 -uroot -p123456 -P8066
+   Welcome to the MySQL monitor.  Commands end with ; or \g.
+   Your MySQL connection id is 1226617162
+   Server version: 5.1.45-mysql-amoeba-proxy-2.2.0 Source distribution
+
+   Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+
+   Oracle is a registered trademark of Oracle Corporation and/or its
+   affiliates. Other names may be trademarks of their respective
+   owners.
+
+   Type &#39;help;&#39; or &#39;\h&#39; for help. Type &#39;\c&#39; to clear the current input statement.
+
+   mysql&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;看起来和正常进入mysql一样，你可以通过    Server version 区分它与mysql，下面做一些操作测试，怎样使用mysql怎样使用它。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;mysql&amp;gt; show databases;
+    +--------------------+
+    | Database           |
+    +--------------------+
+    | information_schema |
+    | logs               |
+    | mysql              |
+    | performance_schema |
+    | test               |
+    +--------------------+
+    5 rows in set (0.00 sec)
+    mysql&amp;gt; use test
+    Database changed
+    mysql&amp;gt; select * from user;
+    +-----+--------+
+    | uid | name   |
+    +-----+--------+
+    |   1 | szws01 |
+    +-----+--------+
+    1 row in set (0.00 sec)
+    mysql&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;可以看到和我们之前数据是一样的，接下来测试下读写分离。&lt;/p&gt;
+
+&lt;p&gt;1.停掉从库 ,在 slave1 slave2 终端键入:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;    STOP SLAVE;                  
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;2.在Amoeba 终端写入数据,然后在查询.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;    mysql&amp;gt; insert into user set name =&#39;Amoeba&#39;;
+    Query OK, 1 row affected (0.00 sec)
+
+    mysql&amp;gt; select * from user;
+    +-----+--------+
+    | uid | name   |
+    +-----+--------+
+    |   1 | szws01 |
+    +-----+--------+
+    1 row in set (0.00 sec)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;查询发现刚才的数据找不到了，别着急我们去主库找找。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;➜  amoeba  mysql -uroot -p                        
+Enter password:
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 20
+Server version: 5.5.41-log Source distribution
+
+Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type &#39;help;&#39; or &#39;\h&#39; for help. Type &#39;\c&#39; to clear the current input statement.
+
+mysql&amp;gt; use test
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+mysql&amp;gt; select * from user;
++-----+--------+
+| uid | name   |
++-----+--------+
+|   1 | szws01 |
+|   2 | Amoeba |
++-----+--------+
+2 rows in set (0.00 sec)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;因为我们刚才关闭了主从，所以主库的数据并没有同步到从库，然而我们配置Amoeba的时候，设置了读是从 slave1,slave2上面读的，
+所以没有查询到是正常的，接下来打开主从，slave1,slave2 执行命令:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;START SLAVE;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;然后在 Amoeba 终端中查询：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;mysql&amp;gt; select * from user;
++-----+--------+
+ | uid | name   |
+ +-----+--------+
+ |   1 | szws01 |
+ |   2 | Amoeba |
+ +-----+--------+
+ 2 rows in set (0.00 sec)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;现在有结果了，至此这篇文章就结束了，总体来说，不论是mysql主从还是Amoeba配置都是比较简单的。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>php操作mongodb笔记</title>
+      <link>http://zhengyin.github.io/post/mongodb-note/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
+      
+      <guid>http://zhengyin.github.io/post/mongodb-note/</guid>
+      <description>&lt;p&gt;大致把它分为了如下几块记录&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zhengyin/blog/blob/master/code/php-mongo/curd.php&#34; target=&#34;_blank&#34;&gt;Mongodb CURD 操作&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zhengyin/blog/blob/master/code/php-mongo/find.php&#34; target=&#34;_blank&#34;&gt;Mongodb 查询&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zhengyin/blog/blob/master/code/php-mongo/modify.php&#34; target=&#34;_blank&#34;&gt;Mongodb 修改器操作&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zhengyin/blog/blob/master/code/php-mongo/update.php&#34; target=&#34;_blank&#34;&gt;Mongodb 更多有关更新的内容&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zhengyin/blog/blob/master/code/php-mongo/cursor.php&#34; target=&#34;_blank&#34;&gt;Mongodb 游标操作&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;每一个对应一个类文件,你可以点以上链接查看到源码。&lt;/p&gt;
+
+&lt;p&gt;测试的时候根据 GET 里面的 act 执行具体的方法，具体代码如下面这样。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$act = isset($_GET[&#39;act&#39;])?$_GET[&#39;act&#39;]:&#39;read&#39;;
+$o = new MongoDbCursor();
+$o-&amp;gt;$act();
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;目前只更新到游标部分，后续有更新我会继续在此帖补充。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>写一个PHP进程管理脚本</title>
+      <link>http://zhengyin.github.io/post/php-process-manage-script/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
+      
+      <guid>http://zhengyin.github.io/post/php-process-manage-script/</guid>
+      <description>
+
+&lt;h2 id=&#34;写一个php进程管理脚本:d023dbfb12a7f9e4fc02119184930127&#34;&gt;写一个PHP进程管理脚本&lt;/h2&gt;
+
+&lt;p&gt;进程管理脚本有Shell干嘛非要去折腾个PHP呢，这个问题让我来回答我会这样说。&lt;/p&gt;
+
+&lt;p&gt;用PHP来写很爽好吗，而且如果你的应用程序是PHP，这样会更灵活。总该为折腾找个理由，以上便是。&lt;/p&gt;
+
+&lt;p&gt;废话不多说，咱开始. 首先准备一些基础知识&lt;/p&gt;
+
+&lt;p&gt;###Shell部分&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;1.如何后台运行一个PHP脚本，格式如下  &amp;quot;PHP执行路径  脚本路径  &amp;gt;&amp;gt; 日志路径  &amp;amp; &amp;quot; 如：/opt/app/php/bin/php worker.php &amp;gt;&amp;gt; /tmp/log.log &amp;amp; 
+2.查看进程：&amp;quot;ps aux | grep worker.php | grep -v grep&amp;quot;   (跟着上面的例子)
+3.取得进程PID: &amp;quot;ps aux | grep worker.php | grep -v grep | awk &#39;{print $2}&#39;&amp;quot; 
+4.杀死一个进程: kill -9 {Pid}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;###PHP部分&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;1.PHP执行Shell函数： shell_exec($cmd);  $cmd 就是Shell命令 返回Shell输出流
+2.直接在PHP脚本中执行Shell: `ps aux | grep worker.php`  返回Shell输出流
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;有了上面这些基础，下面的代码就比较简单了&lt;/p&gt;
+
+&lt;p&gt;###程序代码部分 WorkerAdmin.php&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;
+	&amp;lt;?php
+	/**
+	 * @date 2015-07-17
+	 * @author zhengyin &amp;lt;zhengyin.name@gmail.com&amp;gt;
+	 * PHP 进程管理脚本
+	 */
+	class WorkerAdmin{
+		
+		const PHP_BIN = &#39;/opt/app/php/bin/php&#39;;
+		
+		private static $process;
+		
+		private static $log;
+		
+		private static $num;
+		
+		private static $cmds = array(&#39;start&#39;,&#39;restart&#39;,&#39;stop&#39;);
+		/**
+		 * @param Array $argv
+		 */
+		public static function main($argv){
+			
+			self::$process = isset($argv[1])?$argv[1]:&#39;&#39;;
+		
+			$cmd = isset($argv[2])?$argv[2]:&#39;&#39;;
+			
+			self::$num = isset($argv[3])?intval($argv[3]):0;
+	
+			self::$log = isset($argv[4])?$argv[4]:&#39;/dev/null&#39;;	//默认丢弃日志
+			//脚本不存在，或者不可执行
+			if(!file_exists(self::$process) || !is_executable(self::$process)){
+				echo self::$process.&amp;quot; not exists\n&amp;quot;;
+				echo chr(7);
+				exit;
+			}
+			//cmd 不正确
+			if(!in_array($cmd, self::$cmds)){
+				echo &amp;quot;usage: &amp;quot;.self::$process.&amp;quot; &amp;quot;.implode(&#39;|&#39;, self::$cmds).&amp;quot; [num]\n&amp;quot;;
+				echo chr(7);
+				exit;
+			}
+			
+			self::$cmd();
+		}
+		/**
+		 * 启动
+		 */
+		public static function start(){
+			if(self::$num&amp;lt;1){
+				echo &amp;quot;start num is invalid\n&amp;quot;;
+				echo chr(7);
+				exit;
+			}else{
+				for ($i=0;$i&amp;lt;self::$num;$i++){
+					self::runWorker();
+				}
+				echo &amp;quot;start done\n&amp;quot;;
+			}
+		}
+		/**
+		 * 重启
+		 */
+		public static function restart(){
+			$count = 0;
+			$pids = self::getWorkerPids();
+			for($i=0;$i&amp;lt;count($pids);$i++){
+				self::killWorker($pids[$i]);
+				//杀掉老进程后，新启一个进程
+				$count++;
+				self::runWorker();
+				//缓冲1秒，避免瞬间杀死worker后，照成脚本无法工作
+				sleep(1);
+			}
+			//最后检查下，是否达到了需要的启动数量
+			if($count &amp;lt;self::$num){
+				for($n=0;$n&amp;lt;self::$num-$count;$n++){
+					self::runWorker();
+				}
+			}
+			echo &amp;quot;restart done\n&amp;quot;;
+		}
+		/**
+		 * 停止
+		 */
+		public static function stop(){
+			$pids = self::getWorkerPids();
+			for ($i=0;$i&amp;lt;count($pids);$i++){
+				self::killWorker($pids[$i]);
+				//缓冲1秒，避免瞬间杀死worker后，照成脚本无法工作
+				sleep(1);	
+			}
+			echo &amp;quot;stop done\n&amp;quot;;
+		}
+		/**
+		 * 运行一个 worker
+		 */
+		private static function runWorker(){
+			$cmd = sprintf(&amp;quot;%s %s &amp;gt;&amp;gt; %s &amp;amp;&amp;quot;,self::PHP_BIN,self::$process,self::$log);
+			echo $cmd.PHP_EOL;
+			shell_exec($cmd);
+		}
+		/**
+		 * 杀死一个 worker
+		 */
+		private static function killWorker($pid){
+			`kill -9 $pid`;
+			echo &amp;quot;kill {$pid} done \n&amp;quot;;
+		}
+		/**
+		 * 获取正在运行的worker pid 
+		 */
+		private static function getWorkerPids(){
+			
+			$cmd = &#39;ps aux | grep &#39;.basename(self::$process).&#39;| grep -v grep | grep -v &#39;.basename(__FILE__).&#39; | awk \&#39;{print $2}\&#39;&#39;;
+			$result = shell_exec($cmd);
+			$pids = array_filter(explode(&amp;quot;\n&amp;quot;, $result));
+			return $pids;
+		}
+	}
+	WorkerAdmin::main($argv);
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;在同级目录建立一个测试文件： worker.php 代码如下&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;
+	&amp;lt;?php
+	while (true){
+		echo date(&#39;Y-m-d H:i:s&#39;).PHP_EOL;
+		sleep(3);
+	}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;如果要对该 Worker 进行管理命令如下:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;php WorkerAdmin.php worker.php start 10  启动10个进程，无日志
+php WorkerAdmin.php worker.php restart  重启
+php WorkerAdmin.php worker.php stop  停止
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;实际上如果你的守护进程和你的应用程序息息相关,完全可以走配置的文件进行更好的管理,这需要修改下 WorkerAdmin&lt;/p&gt;
+
+&lt;p&gt;###修改后的 WorkerAdmin.php&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;
+	&amp;lt;?php
+	/**
+	 * @date 2015-07-17
+	 * @author zhengyin &amp;lt;zhengyin.name@gmail.com&amp;gt;
+	 * PHP 进程管理脚本
+	 */
+	class WorkerAdmin{
+		
+		const PHP_BIN = &#39;/opt/app/php/bin/php&#39;;
+		
+		private static $workerConfig = array(
+				&#39;worker&#39;=&amp;gt;array(
+					&#39;process&#39;=&amp;gt;&#39;/data/webroot/izhengyin/public/test/shell/worker.php&#39;,
+					&#39;num&#39;=&amp;gt;10,
+					&#39;log&#39;=&amp;gt;&#39;/tmp/worker.log&#39;		
+				)
+		);
+		
+		private static $process;
+		
+		private static $log;
+		
+		private static $num;
+		
+		private static $cmds = array(&#39;start&#39;,&#39;restart&#39;,&#39;stop&#39;);
+		/**
+		 * @param Array $argv
+		 */
+		public static function main($argv){
+			
+			$name = isset($argv[1])?$argv[1]:&#39;&#39;;
+			$cmd = isset($argv[2])?$argv[2]:&#39;&#39;;
+			
+			//worker不存在
+			if(!isset(self::$workerConfig[$name])){
+				echo &#39;Worker:&#39;.$name.&amp;quot; not exists\n&amp;quot;;
+				echo chr(7);
+				exit;
+			}
+			//取得相应的进程配置
+			self::$process = self::$workerConfig[$name][&#39;process&#39;];
+			self::$num = self::$workerConfig[$name][&#39;num&#39;];
+			self::$log = self::$workerConfig[$name][&#39;log&#39;];
+			
+			//脚本不存在，或者不可执行
+			if(!file_exists(self::$process) || !is_executable(self::$process)){
+				echo self::$process.&amp;quot; not exists\n&amp;quot;;
+				echo chr(7);
+				exit;
+			}
+			//cmd 不正确
+			if(!in_array($cmd, self::$cmds)){
+				echo &amp;quot;usage: &amp;quot;.self::$process.&amp;quot; &amp;quot;.implode(&#39;|&#39;, self::$cmds).&amp;quot; [num]\n&amp;quot;;
+				echo chr(7);
+				exit;
+			}
+			
+			self::$cmd();
+		}
+		/**
+		 * 启动
+		 */
+		public static function start(){
+			if(self::$num&amp;lt;1){
+				echo &amp;quot;start num is invalid\n&amp;quot;;
+				echo chr(7);
+				exit;
+			}else{
+				for ($i=0;$i&amp;lt;self::$num;$i++){
+					self::runWorker();
+				}
+				echo &amp;quot;start done\n&amp;quot;;
+			}
+		}
+		/**
+		 * 重启
+		 */
+		public static function restart(){
+			$count = 0;
+			$pids = self::getWorkerPids();
+			for($i=0;$i&amp;lt;count($pids);$i++){
+				self::killWorker($pids[$i]);
+				//杀掉老进程后，新启一个进程
+				$count++;
+				self::runWorker();
+				//缓冲1秒，避免瞬间杀死worker后，照成脚本无法工作
+				sleep(1);
+			}
+			//最后检查下，是否达到了需要的启动数量
+			if($count &amp;lt;self::$num){
+				for($n=0;$n&amp;lt;self::$num-$count;$n++){
+					self::runWorker();
+				}
+			}
+			echo &amp;quot;restart done\n&amp;quot;;
+		}
+		/**
+		 * 停止
+		 */
+		public static function stop(){
+			$pids = self::getWorkerPids();
+			for ($i=0;$i&amp;lt;count($pids);$i++){
+				self::killWorker($pids[$i]);
+				//缓冲1秒，避免瞬间杀死worker后，照成脚本无法工作
+				sleep(1);	
+			}
+			echo &amp;quot;stop done\n&amp;quot;;
+		}
+		/**
+		 * 运行一个 worker
+		 */
+		private static function runWorker(){
+			$cmd = sprintf(&amp;quot;%s %s &amp;gt;&amp;gt; %s &amp;amp;&amp;quot;,self::PHP_BIN,self::$process,self::$log);
+			echo $cmd.PHP_EOL;
+			shell_exec($cmd);
+		}
+		/**
+		 * 杀死一个 worker
+		 */
+		private static function killWorker($pid){
+			`kill -9 $pid`;
+			echo &amp;quot;kill {$pid} done \n&amp;quot;;
+		}
+		/**
+		 * 获取正在运行的worker pid 
+		 */
+		private static function getWorkerPids(){
+			
+			$cmd = &#39;ps aux | grep &#39;.basename(self::$process).&#39;| grep -v grep | grep -v &#39;.basename(__FILE__).&#39; | awk \&#39;{print $2}\&#39;&#39;;
+			$result = shell_exec($cmd);
+			$pids = array_filter(explode(&amp;quot;\n&amp;quot;, $result));
+			return $pids;
+		}
+	}
+	WorkerAdmin::main($argv);
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;下面你就可以通过如下命令管理Worker了:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;php WorkerAdmin.php worker start 启动worker
+php WorkerAdmin.php worker restart  重启
+php WorkerAdmin.php worker stop  停止
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;程序里面的 WorkerConfig 你完全可以把它摘除到外部，比如你使用框架，你可以把摘除到你的应用配置里，这里就不展开讨论了。&lt;/p&gt;
+
+&lt;p&gt;So , 这篇文章就到此为止。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>在Yaf中使用Yar</title>
+      <link>http://zhengyin.github.io/post/yaf-yar/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
+      
+      <guid>http://zhengyin.github.io/post/yaf-yar/</guid>
+      <description>
+
+&lt;h2 id=&#34;在yaf中使用yar:7ca2c6e4bdcb04df6c1f3d2a41a1f959&#34;&gt;在Yaf中使用Yar&lt;/h2&gt;
+
+&lt;p&gt;本文提到的两个东西，都是 PHP 大神 惠新宸 的作品。&lt;/p&gt;
+
+&lt;p&gt;Yaf: PHP MVC框架  &lt;a href=&#34;http://php.net/manual/zh/book.yaf.php&#34;&gt;http://php.net/manual/zh/book.yaf.php&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Yar: PHP RPC框架    &lt;a href=&#34;http://php.net/manual/zh/book.yar.php&#34;&gt;http://php.net/manual/zh/book.yar.php&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;看着篇文章之前你需要 Yaf,Yar 有所了解。&lt;/p&gt;
+
+&lt;p&gt;随着网站的发展，原本的系统会逐渐的实现细分，而细分的系统之间并不是全无关联，这就涉及到各系统之前数据传输问题，Yar 就是帮助我们解决这些问题的。&lt;/p&gt;
+
+&lt;p&gt;虽然 Yar已经把底层数据传输给我们解决了，并且调用十分简单,但要部署上线还是需要自行处理一些问题的，所谓“师傅领进门，修行靠个人”。&lt;/p&gt;
+
+&lt;p&gt;大致来说我们要解决下面这三个问题：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;1.数据传输安全校验
+2.接口定义
+3.数据格式
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;本文是我在 Yaf 处理这些问题的一些做法，如果你阅读完本文后有不同想法可以在评论区给我留言。&lt;/p&gt;
+
+&lt;p&gt;先贴出目录结构方便后面对应文字描述：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;➜  izhengyin  tree
+.
+├── application
+│   ├── Bootstrap.php
+│   ├── controllers
+│   │   ├── Api.php
+│   │   ├── Error.php
+│   │   └── Index.php
+│   ├── library
+│   │   └── Api
+│   │       ├── Order.php
+│   │       └── User.php
+│   ├── models
+│   ├── modules
+│   │   └── Api
+│   │       └── controllers
+│   │           └── User.php
+│   ├── plugins
+│   │   └── Runtime.php
+│   └── views
+│       ├── error
+│       │   └── error.phtml
+│       └── index
+│           └── index.phtml
+├── conf
+│   └── application.ini
+├── libs
+│   └── IZY
+│       └── Sys
+│           ├── ApiClient.php
+│           └── ApiServer.php
+└── public
+    └── index.php
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;首先来定义服务端，定义之前考虑下，一个系统可能会为不同的模块单独定义不同的接口类&lt;/p&gt;
+
+&lt;p&gt;比如一个电商系统，有会员模块，和订单模块，所以在定义接口时，把它们区分开来分开定义，所以把每一类的接口抽象为一个Server，定义如下。&lt;/p&gt;
+
+&lt;p&gt;会员接口： &lt;a href=&#34;http://servername/Api/user/&#34;&gt;http://servername/Api/user/&lt;/a&gt;
+订单接口： &lt;a href=&#34;http://servername/Api/Order/&#34;&gt;http://servername/Api/Order/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;所以在 Yaf 中需要这样写。&lt;/p&gt;
+
+&lt;p&gt;Controller File:   /application/controllers/Api.php&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;&amp;lt;?php
+class ApiController extends Yaf\Controller_Abstract
+{
+    /**
+     * 会员接口
+     * @return boolean
+     */
+    public function userAction()
+    {
+        $service = new Yar_Server(new \Api\User());
+        $service-&amp;gt;handle();
+        return false;
+    }
+    /**
+     *  订单接口
+     *  @return boolean
+     */
+    public function orderAction()
+    {
+        $service = new Yar_Server(new \Api\Order());
+        $service-&amp;gt;handle();
+        return false;
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;以上我们的接口类文件指向了命令空间  \Api 下的  User 类 与 Order 类， 在Yaf 下需要如此定义。&lt;/p&gt;
+
+&lt;p&gt;User File:   /application/library/Api/User.php&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;&amp;lt;?php
+/**
+ * @date 2015-1-17
+ * @author zhengyin &amp;lt;zhengyin.name@gmail.com&amp;gt;
+ * @desc 会员对外接口
+ */
+namespace Api;
+class User extends \IZY\Sys\ApiServer
+{
+    /**
+     * 获取会员信息
+     * @param int $userId   用户ID
+     * return Array [会员信息]
+     */
+    public function getUserInfo($userId)
+    {
+
+        // ... 业务处理
+
+        $data = array(&#39;userName&#39;=&amp;gt;&#39;zhangsan&#39;,&#39;nickName&#39;=&amp;gt;&#39;张三&#39;,&#39;regTime&#39;=&amp;gt;&#39;2014-12-01 10:10:10&#39;);
+
+        return $this-&amp;gt;response(1,$data);
+    }
+
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Order File: /application/library/Api/Order.php&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;&amp;lt;?php
+/**
+ * @date 2015-1-17
+ * @author zhengyin &amp;lt;zhengyin.name@gmail.com&amp;gt;
+ * @desc 订单对外接口
+ */
+namespace Api;
+class Order extends \IZY\Sys\ApiServer
+{
+    /**
+     * 获取会员信息
+     * @param int $orderId   订单ID
+     * @param str $sign 签名
+     * return Array [订单信息]
+     */
+    public function getOrderInfo($orderId,$sign)
+    {
+        //验证签名
+        if(!$this-&amp;gt;checkSign(func_get_args(),$sign)){
+            return $this-&amp;gt;response(0,array(
+                    &#39;code&#39;=&amp;gt;&#39;SIGN_ERROR&#39;,
+                    &#39;errMsg&#39;=&amp;gt;&#39;签名错误&#39;
+            ));
+        }
+
+        // ... 业务处理
+
+        $data = array(&#39;orderId&#39;=&amp;gt;$orderId,&#39;orderStatus&#39;=&amp;gt;&#39;success&#39;);
+        return $this-&amp;gt;response(1, $data);
+    }
+
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;这两个类文件都继承了命名空间  \IZY\Sys   ApiServer 类,这个类实际上是一些通用方法的封装&lt;/p&gt;
+
+&lt;p&gt;这个文件属于系统的核心文件，所以把它放在了 Yaf.ini 指定的 lib 下，这个根据具体指定而定，比如我的是:&lt;/p&gt;
+
+&lt;p&gt;yaf.library = /data/webroot/izhengyin/libs&lt;/p&gt;
+
+&lt;p&gt;内容如下:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;&amp;lt;?php
+namespace  IZY\Sys;
+class ApiServer
+{
+    private static $signs = array(
+            &#39;sign1&#39;,
+            &#39;sign2&#39;
+            // .... 
+    );
+    /**
+     * 验证签名
+     * @param  $params 接口调用时的参数
+     * @param  $sign   签名
+     */
+    protected function checkSign($params,$sign)
+    {
+        if(empty($sign)){
+            return false;
+        }
+        ksort($params);
+        $signStr = &#39;&#39;;
+        foreach($params as $key =&amp;gt; $val)
+        {
+            if(empty($val) || $val == $sign) continue;
+            $signStr .= $key.&#39;=&#39;.$val.&#39;&amp;amp;&#39;;
+        }
+        $signStr = rtrim($signStr,&#39;&amp;amp;&#39;);
+        foreach (self::$signs as $v){
+            if(md5($signStr.$v) === $sign){
+                return true;
+            }
+        }
+        return false;
+    }
+    /**
+     * 返回接口处理结果
+     * @param  $status
+     * @param  $data
+     * @param  $other
+     * return  Array [格式化好了的结果]
+     */
+    protected function response($status,$data,$other=array())
+    {
+        $response = array ();
+        $response [&#39;status&#39;] = ( bool ) $status;
+        $response [&#39;data&#39;] = $data;
+        if (is_array ( $other ) &amp;amp;&amp;amp; ! empty ( $other )) {
+            foreach ( $other as $k =&amp;gt; $v ) {
+                // 附加信息不能使用的键名
+                if (! in_array ( $k, array (
+                        &#39;status&#39;,
+                        &#39;data&#39;
+                ) )) {
+                    $response [$k] = $v;
+                }
+            }
+        }
+        return $response;
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;简单的封装了两个方法，验证签名，和返回数据格式定义，实际上就是解决 数据安全校验，与数据格式定义问题。&lt;/p&gt;
+
+&lt;p&gt;完了以后写个测试文件，测试下。&lt;/p&gt;
+
+&lt;p&gt;test.php&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;&amp;lt;?php
+    header(&#39;Content-type:text/html;charset=utf-8&#39;); 
+    $client = new Yar_Client(&amp;quot;http://izhengyin.com/Api/User&amp;quot;); 
+    $result = $client-&amp;gt;getUserInfo(10); 
+    echo &#39;&amp;lt;pre&amp;gt;&#39;; 
+    var_dump($result);
+?&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;访问这个文件正常能看到  getUserInfo 的返回。&lt;/p&gt;
+
+&lt;p&gt;上面是 server 的一些封装，接下来看下， client 的封装&lt;/p&gt;
+
+&lt;p&gt;命名空间  \IZY\Sys   ApiClient 类&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;&amp;lt;?php
+namespace  IZY\Sys;
+
+class ApiClient
+{
+    private static $signs = array(
+            &#39;sign1&#39;,
+            &#39;sign2&#39;
+            // .... 
+    );
+
+    private $callBack;
+    private $callNum=0;
+    public function __construct()
+    {
+
+    }
+
+    /**
+     * 取得签名
+     * @param  $params 接口调用时的参数
+     */
+    protected function getSign($params)
+    {
+        ksort($params);
+        $signStr = &#39;&#39;;
+        foreach($params as $key =&amp;gt; $val)
+        {
+            if(empty($val)) continue;
+            $signStr .= $key.&#39;=&#39;.$val.&#39;&amp;amp;&#39;;
+        }
+        $signStr = rtrim($signStr,&#39;&amp;amp;&#39;);
+        return md5($signStr.self::$signs[mt_rand(0,count(self::$signs)-1)]);
+    }
+    /**
+     * 调用服务端接口
+     * @param  $server      Api server
+     * @param  $api         接口
+     * @param  $params      参数
+     * @param  $openSign    开启签名
+     * @param  $callBack    回调
+     */ 
+    public function call($server,$api,$params,$openSign=false,$callBack=null)
+    {
+        if($openSign){
+            $params[&#39;sign&#39;] = $this-&amp;gt;getSign($params);
+        }
+
+        if($callBack === null){
+            $client = new \Yar_Client(&amp;quot;http://izhengyin.com/Api/User&amp;quot;);
+            return call_user_method_array($api, $client, $params);
+        }
+        $this-&amp;gt;callNum ++;
+        $this-&amp;gt;callBack = $callBack;
+        return \Yar_Concurrent_Client::call($server,$api,$params,array($this, &#39;ApiClientCallBack&#39;));
+    }
+    /**
+     * 执行并发调用
+     */
+    public function loop()
+    {
+        return \Yar_Concurrent_Client::loop(); 
+    }
+    /**
+     * 并发调用回调
+     * @param  $retval
+     * @param  $callinfo
+     */
+    public function ApiClientCallBack($retval,$callinfo)
+    {
+        if($callinfo === null){
+            return $this-&amp;gt;callBack($retval,$callinfo);
+        }
+        static $data = array();
+        $data[$callinfo[&#39;method&#39;]] = $retval;
+        if(count($data) == $this-&amp;gt;callNum){
+            $fn = $this-&amp;gt;callBack;
+            return $fn($data,$callinfo);
+        }
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;这个类封装了，取得签名的方法，已经并发调用的方法,使用时类似于这样：&lt;/p&gt;
+
+&lt;p&gt;单个接口调用，并且不进行加密：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;&amp;lt;?php 
+
+class UserController extends Yaf\Controller_Abstract 
+{ 
+    public function getUserInfoAction() 
+    { 
+        $apiClinet = new \IZY\Sys\ApiClient();
+        $userInfo = $apiClinet-&amp;gt;call(&amp;quot;http://izhengyin.com/Api/User&amp;quot;, &#39;getUserInfo&#39;, array(10));
+        var_dump($userInfo );
+        return false; 
+    } 
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;输出：&lt;/p&gt;
+
+&lt;p&gt;array(2) { [&amp;ldquo;status&amp;rdquo;]=&amp;gt; bool(true) [&amp;ldquo;data&amp;rdquo;]=&amp;gt; array(3) { [&amp;ldquo;userName&amp;rdquo;]=&amp;gt; string(8) &amp;ldquo;zhangsan&amp;rdquo; [&amp;ldquo;nickName&amp;rdquo;]=&amp;gt; string(6) &amp;ldquo;张三&amp;rdquo; [&amp;ldquo;regTime&amp;rdquo;]=&amp;gt; string(19) &amp;ldquo;2014-12-01 10:10:10&amp;rdquo; }&lt;/p&gt;
+
+&lt;p&gt;多个接口调用并且却 getOrderInfo 进行加密：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;&amp;lt;?php 
+
+class UserController extends Yaf\Controller_Abstract 
+{ 
+    public function getUserInfoAction() 
+    { 
+        $apiClinet = new \IZY\Sys\ApiClient(); 
+        function callback($data,$callinfo){ 
+            var_dump($data); 
+        } 
+        $apiClinet-&amp;gt;call(&amp;quot;http://izhengyin.com/Api/User&amp;quot;, &#39;getUserInfo&#39;, array(10),false,&#39;callback&#39;); 
+        $apiClinet-&amp;gt;call(&amp;quot;http://izhengyin.com/Api/Order&amp;quot;, &#39;getOrderInfo&#39;, array(10),true,&#39;callback&#39;); 
+        $apiClinet-&amp;gt;loop(); 
+        return false; 
+    } 
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;输出：&lt;/p&gt;
+
+&lt;p&gt;array(2) {
+    [&amp;ldquo;getOrderInfo&amp;rdquo;]=&amp;gt; array(2) { [&amp;ldquo;status&amp;rdquo;]=&amp;gt; bool(true) [&amp;ldquo;data&amp;rdquo;]=&amp;gt; array(2) { [&amp;ldquo;ord erId&amp;rdquo;]=&amp;gt; int(10) [&amp;ldquo;orderStatus&amp;rdquo;]=&amp;gt; string(7) &amp;ldquo;success&amp;rdquo; }
+     }
+    [&amp;ldquo;getUserInfo&amp;rdquo;]=&amp;gt; array(2) { [&amp;ldquo;status&amp;rdquo;]=&amp;gt; bool(true) [&amp;ldquo;data&amp;rdquo;]=&amp;gt; array(3) { [&amp;ldquo;userName&amp;rdquo;]=&amp;gt; string(8) &amp;ldquo;zhangsan&amp;rdquo; [&amp;ldquo;nickName&amp;rdquo;]=&amp;gt; string(6) &amp;ldquo;张三&amp;rdquo; [&amp;ldquo;regTime&amp;rdquo;]=&amp;gt; string(19) &amp;ldquo;2014-12-01 10:10:10&amp;rdquo; }
+     }
+ }&lt;/p&gt;
+
+&lt;p&gt;本文代码下载： &lt;a href=&#34;http://izhengyin.com/downloads/izhengyin.zip&#34;&gt;izhengyin.zip&lt;/a&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

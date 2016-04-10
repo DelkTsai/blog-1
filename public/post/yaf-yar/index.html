@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在Yaf中使用Yar &middot; 郑印</title>
+
+    <meta name="description" content="在Yaf中使用Yar">
+
+    <meta name="generator" content="Hugo 0.14" />
+    <meta name="twitter:card" content="summary">
+    
+    <meta name="twitter:title" content="在Yaf中使用Yar &middot; 郑印">
+    <meta name="twitter:description" content="在Yaf中使用Yar">
+
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="在Yaf中使用Yar &middot; 郑印">
+    <meta property="og:description" content="在Yaf中使用Yar">
+
+    <link href='//fonts.googleapis.com/css?family=Source+Sans+Pro:400,700|Oxygen:400,700' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/pure/0.6.0/pure-min.css">
+    <!--[if lte IE 8]>
+        <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/pure/0.6.0/grids-responsive-old-ie-min.css">
+    <![endif]-->
+    <!--[if gt IE 8]><!-->
+        <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/pure/0.6.0/grids-responsive-min.css">
+    <!--<![endif]-->
+
+    <link rel="stylesheet" href="http://zhengyin.github.io//css/all.min.css">
+    <link href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css" rel="stylesheet">
+
+    <link rel="alternate" type="application/rss+xml" title="郑印" href="http://zhengyin.github.io//index.xml" />
+</head>
+<body>
+
+
+<div id="layout" class="pure-g">
+    <div class="sidebar pure-u-1 pure-u-md-1-4">
+    <div class="header">
+        <hgroup>
+            <h1 class="brand-title"><a href="http://zhengyin.github.io/">郑印</a></h1>
+            <h2 class="brand-tagline"> 85后程序员，目前在写PHP和Nodejs </h2>
+        </hgroup>
+
+        <nav class="nav">
+            <ul class="nav-list">
+                
+                
+                <li class="nav-item">
+                    <a class="pure-button" href="https://github.com/zhengyin "><i class="fa fa-github-alt"></i> Github</a>
+                </li>
+                
+                <li class="nav-item">
+                    <a class="pure-button" href="http://zhengyin.github.io//index.xml"><i class="fa fa-rss"></i> rss</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+</div>
+
+
+    <div class="content pure-u-1 pure-u-md-3-4">
+        <div>
+            
+            <div class="posts">
+                <h1 class="content-subhead">10 Apr 2016, 09:07</h1>
+                <section class="post">
+                    <header class="post-header">
+
+                        <a href="http://zhengyin.github.io/post/yaf-yar/" class="post-title">在Yaf中使用Yar</a>
+
+                        <p class="post-meta">
+                            
+                            
+                        </p>
+                    </header>
+                    
+                    <div class="post-description">
+                        
+
+<h2 id="在yaf中使用yar:7ca2c6e4bdcb04df6c1f3d2a41a1f959">在Yaf中使用Yar</h2>
+
+<p>本文提到的两个东西，都是 PHP 大神 惠新宸 的作品。</p>
+
+<p>Yaf: PHP MVC框架  <a href="http://php.net/manual/zh/book.yaf.php">http://php.net/manual/zh/book.yaf.php</a></p>
+
+<p>Yar: PHP RPC框架    <a href="http://php.net/manual/zh/book.yar.php">http://php.net/manual/zh/book.yar.php</a></p>
+
+<p>看着篇文章之前你需要 Yaf,Yar 有所了解。</p>
+
+<p>随着网站的发展，原本的系统会逐渐的实现细分，而细分的系统之间并不是全无关联，这就涉及到各系统之前数据传输问题，Yar 就是帮助我们解决这些问题的。</p>
+
+<p>虽然 Yar已经把底层数据传输给我们解决了，并且调用十分简单,但要部署上线还是需要自行处理一些问题的，所谓“师傅领进门，修行靠个人”。</p>
+
+<p>大致来说我们要解决下面这三个问题：</p>
+
+<pre><code>1.数据传输安全校验
+2.接口定义
+3.数据格式
+</code></pre>
+
+<p>本文是我在 Yaf 处理这些问题的一些做法，如果你阅读完本文后有不同想法可以在评论区给我留言。</p>
+
+<p>先贴出目录结构方便后面对应文字描述：</p>
+
+<pre><code>➜  izhengyin  tree
+.
+├── application
+│   ├── Bootstrap.php
+│   ├── controllers
+│   │   ├── Api.php
+│   │   ├── Error.php
+│   │   └── Index.php
+│   ├── library
+│   │   └── Api
+│   │       ├── Order.php
+│   │       └── User.php
+│   ├── models
+│   ├── modules
+│   │   └── Api
+│   │       └── controllers
+│   │           └── User.php
+│   ├── plugins
+│   │   └── Runtime.php
+│   └── views
+│       ├── error
+│       │   └── error.phtml
+│       └── index
+│           └── index.phtml
+├── conf
+│   └── application.ini
+├── libs
+│   └── IZY
+│       └── Sys
+│           ├── ApiClient.php
+│           └── ApiServer.php
+└── public
+    └── index.php
+</code></pre>
+
+<p>首先来定义服务端，定义之前考虑下，一个系统可能会为不同的模块单独定义不同的接口类</p>
+
+<p>比如一个电商系统，有会员模块，和订单模块，所以在定义接口时，把它们区分开来分开定义，所以把每一类的接口抽象为一个Server，定义如下。</p>
+
+<p>会员接口： <a href="http://servername/Api/user/">http://servername/Api/user/</a>
+订单接口： <a href="http://servername/Api/Order/">http://servername/Api/Order/</a></p>
+
+<p>所以在 Yaf 中需要这样写。</p>
+
+<p>Controller File:   /application/controllers/Api.php</p>
+
+<pre><code>&lt;?php
+class ApiController extends Yaf\Controller_Abstract
+{
+    /**
+     * 会员接口
+     * @return boolean
+     */
+    public function userAction()
+    {
+        $service = new Yar_Server(new \Api\User());
+        $service-&gt;handle();
+        return false;
+    }
+    /**
+     *  订单接口
+     *  @return boolean
+     */
+    public function orderAction()
+    {
+        $service = new Yar_Server(new \Api\Order());
+        $service-&gt;handle();
+        return false;
+    }
+}
+</code></pre>
+
+<p>以上我们的接口类文件指向了命令空间  \Api 下的  User 类 与 Order 类， 在Yaf 下需要如此定义。</p>
+
+<p>User File:   /application/library/Api/User.php</p>
+
+<pre><code>&lt;?php
+/**
+ * @date 2015-1-17
+ * @author zhengyin &lt;zhengyin.name@gmail.com&gt;
+ * @desc 会员对外接口
+ */
+namespace Api;
+class User extends \IZY\Sys\ApiServer
+{
+    /**
+     * 获取会员信息
+     * @param int $userId   用户ID
+     * return Array [会员信息]
+     */
+    public function getUserInfo($userId)
+    {
+
+        // ... 业务处理
+
+        $data = array('userName'=&gt;'zhangsan','nickName'=&gt;'张三','regTime'=&gt;'2014-12-01 10:10:10');
+
+        return $this-&gt;response(1,$data);
+    }
+
+}
+</code></pre>
+
+<p>Order File: /application/library/Api/Order.php</p>
+
+<pre><code>&lt;?php
+/**
+ * @date 2015-1-17
+ * @author zhengyin &lt;zhengyin.name@gmail.com&gt;
+ * @desc 订单对外接口
+ */
+namespace Api;
+class Order extends \IZY\Sys\ApiServer
+{
+    /**
+     * 获取会员信息
+     * @param int $orderId   订单ID
+     * @param str $sign 签名
+     * return Array [订单信息]
+     */
+    public function getOrderInfo($orderId,$sign)
+    {
+        //验证签名
+        if(!$this-&gt;checkSign(func_get_args(),$sign)){
+            return $this-&gt;response(0,array(
+                    'code'=&gt;'SIGN_ERROR',
+                    'errMsg'=&gt;'签名错误'
+            ));
+        }
+
+        // ... 业务处理
+
+        $data = array('orderId'=&gt;$orderId,'orderStatus'=&gt;'success');
+        return $this-&gt;response(1, $data);
+    }
+
+}
+</code></pre>
+
+<p>这两个类文件都继承了命名空间  \IZY\Sys   ApiServer 类,这个类实际上是一些通用方法的封装</p>
+
+<p>这个文件属于系统的核心文件，所以把它放在了 Yaf.ini 指定的 lib 下，这个根据具体指定而定，比如我的是:</p>
+
+<p>yaf.library = /data/webroot/izhengyin/libs</p>
+
+<p>内容如下:</p>
+
+<pre><code>&lt;?php
+namespace  IZY\Sys;
+class ApiServer
+{
+    private static $signs = array(
+            'sign1',
+            'sign2'
+            // .... 
+    );
+    /**
+     * 验证签名
+     * @param  $params 接口调用时的参数
+     * @param  $sign   签名
+     */
+    protected function checkSign($params,$sign)
+    {
+        if(empty($sign)){
+            return false;
+        }
+        ksort($params);
+        $signStr = '';
+        foreach($params as $key =&gt; $val)
+        {
+            if(empty($val) || $val == $sign) continue;
+            $signStr .= $key.'='.$val.'&amp;';
+        }
+        $signStr = rtrim($signStr,'&amp;');
+        foreach (self::$signs as $v){
+            if(md5($signStr.$v) === $sign){
+                return true;
+            }
+        }
+        return false;
+    }
+    /**
+     * 返回接口处理结果
+     * @param  $status
+     * @param  $data
+     * @param  $other
+     * return  Array [格式化好了的结果]
+     */
+    protected function response($status,$data,$other=array())
+    {
+        $response = array ();
+        $response ['status'] = ( bool ) $status;
+        $response ['data'] = $data;
+        if (is_array ( $other ) &amp;&amp; ! empty ( $other )) {
+            foreach ( $other as $k =&gt; $v ) {
+                // 附加信息不能使用的键名
+                if (! in_array ( $k, array (
+                        'status',
+                        'data'
+                ) )) {
+                    $response [$k] = $v;
+                }
+            }
+        }
+        return $response;
+    }
+}
+</code></pre>
+
+<p>简单的封装了两个方法，验证签名，和返回数据格式定义，实际上就是解决 数据安全校验，与数据格式定义问题。</p>
+
+<p>完了以后写个测试文件，测试下。</p>
+
+<p>test.php</p>
+
+<pre><code>&lt;?php
+    header('Content-type:text/html;charset=utf-8'); 
+    $client = new Yar_Client(&quot;http://izhengyin.com/Api/User&quot;); 
+    $result = $client-&gt;getUserInfo(10); 
+    echo '&lt;pre&gt;'; 
+    var_dump($result);
+?&gt;
+</code></pre>
+
+<p>访问这个文件正常能看到  getUserInfo 的返回。</p>
+
+<p>上面是 server 的一些封装，接下来看下， client 的封装</p>
+
+<p>命名空间  \IZY\Sys   ApiClient 类</p>
+
+<pre><code>&lt;?php
+namespace  IZY\Sys;
+
+class ApiClient
+{
+    private static $signs = array(
+            'sign1',
+            'sign2'
+            // .... 
+    );
+
+    private $callBack;
+    private $callNum=0;
+    public function __construct()
+    {
+
+    }
+
+    /**
+     * 取得签名
+     * @param  $params 接口调用时的参数
+     */
+    protected function getSign($params)
+    {
+        ksort($params);
+        $signStr = '';
+        foreach($params as $key =&gt; $val)
+        {
+            if(empty($val)) continue;
+            $signStr .= $key.'='.$val.'&amp;';
+        }
+        $signStr = rtrim($signStr,'&amp;');
+        return md5($signStr.self::$signs[mt_rand(0,count(self::$signs)-1)]);
+    }
+    /**
+     * 调用服务端接口
+     * @param  $server      Api server
+     * @param  $api         接口
+     * @param  $params      参数
+     * @param  $openSign    开启签名
+     * @param  $callBack    回调
+     */ 
+    public function call($server,$api,$params,$openSign=false,$callBack=null)
+    {
+        if($openSign){
+            $params['sign'] = $this-&gt;getSign($params);
+        }
+
+        if($callBack === null){
+            $client = new \Yar_Client(&quot;http://izhengyin.com/Api/User&quot;);
+            return call_user_method_array($api, $client, $params);
+        }
+        $this-&gt;callNum ++;
+        $this-&gt;callBack = $callBack;
+        return \Yar_Concurrent_Client::call($server,$api,$params,array($this, 'ApiClientCallBack'));
+    }
+    /**
+     * 执行并发调用
+     */
+    public function loop()
+    {
+        return \Yar_Concurrent_Client::loop(); 
+    }
+    /**
+     * 并发调用回调
+     * @param  $retval
+     * @param  $callinfo
+     */
+    public function ApiClientCallBack($retval,$callinfo)
+    {
+        if($callinfo === null){
+            return $this-&gt;callBack($retval,$callinfo);
+        }
+        static $data = array();
+        $data[$callinfo['method']] = $retval;
+        if(count($data) == $this-&gt;callNum){
+            $fn = $this-&gt;callBack;
+            return $fn($data,$callinfo);
+        }
+    }
+}
+</code></pre>
+
+<p>这个类封装了，取得签名的方法，已经并发调用的方法,使用时类似于这样：</p>
+
+<p>单个接口调用，并且不进行加密：</p>
+
+<pre><code>&lt;?php 
+
+class UserController extends Yaf\Controller_Abstract 
+{ 
+    public function getUserInfoAction() 
+    { 
+        $apiClinet = new \IZY\Sys\ApiClient();
+        $userInfo = $apiClinet-&gt;call(&quot;http://izhengyin.com/Api/User&quot;, 'getUserInfo', array(10));
+        var_dump($userInfo );
+        return false; 
+    } 
+}
+</code></pre>
+
+<p>输出：</p>
+
+<p>array(2) { [&ldquo;status&rdquo;]=&gt; bool(true) [&ldquo;data&rdquo;]=&gt; array(3) { [&ldquo;userName&rdquo;]=&gt; string(8) &ldquo;zhangsan&rdquo; [&ldquo;nickName&rdquo;]=&gt; string(6) &ldquo;张三&rdquo; [&ldquo;regTime&rdquo;]=&gt; string(19) &ldquo;2014-12-01 10:10:10&rdquo; }</p>
+
+<p>多个接口调用并且却 getOrderInfo 进行加密：</p>
+
+<pre><code>&lt;?php 
+
+class UserController extends Yaf\Controller_Abstract 
+{ 
+    public function getUserInfoAction() 
+    { 
+        $apiClinet = new \IZY\Sys\ApiClient(); 
+        function callback($data,$callinfo){ 
+            var_dump($data); 
+        } 
+        $apiClinet-&gt;call(&quot;http://izhengyin.com/Api/User&quot;, 'getUserInfo', array(10),false,'callback'); 
+        $apiClinet-&gt;call(&quot;http://izhengyin.com/Api/Order&quot;, 'getOrderInfo', array(10),true,'callback'); 
+        $apiClinet-&gt;loop(); 
+        return false; 
+    } 
+}
+</code></pre>
+
+<p>输出：</p>
+
+<p>array(2) {
+    [&ldquo;getOrderInfo&rdquo;]=&gt; array(2) { [&ldquo;status&rdquo;]=&gt; bool(true) [&ldquo;data&rdquo;]=&gt; array(2) { [&ldquo;ord erId&rdquo;]=&gt; int(10) [&ldquo;orderStatus&rdquo;]=&gt; string(7) &ldquo;success&rdquo; }
+     }
+    [&ldquo;getUserInfo&rdquo;]=&gt; array(2) { [&ldquo;status&rdquo;]=&gt; bool(true) [&ldquo;data&rdquo;]=&gt; array(3) { [&ldquo;userName&rdquo;]=&gt; string(8) &ldquo;zhangsan&rdquo; [&ldquo;nickName&rdquo;]=&gt; string(6) &ldquo;张三&rdquo; [&ldquo;regTime&rdquo;]=&gt; string(19) &ldquo;2014-12-01 10:10:10&rdquo; }
+     }
+ }</p>
+
+<p>本文代码下载： <a href="http://izhengyin.com/downloads/izhengyin.zip">izhengyin.zip</a></p>
+
+
+                    </div>
+                    
+                        <div class="post-share">
+                            <div class="bdsharebuttonbox"><a href="#" class="bds_more" data-cmd="more"></a><a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a><a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a><a href="#" class="bds_tqq" data-cmd="tqq" title="分享到腾讯微博"></a><a href="#" class="bds_renren" data-cmd="renren" title="分享到人人网"></a><a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a></div>
+<script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdPic":"","bdStyle":"0","bdSize":"16"},"share":{}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+                        </div>
+                    
+                    
+<div class="ds-thread" data-thread-key="在Yaf中使用Yar" data-title="在Yaf中使用Yar" data-url=""></div>
+
+
+<script type="text/javascript">
+var duoshuoQuery = {short_name:"izhengyin"};
+	(function() {
+		var ds = document.createElement('script');
+		ds.type = 'text/javascript';ds.async = true;
+		ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+		ds.charset = 'UTF-8';
+		(document.getElementsByTagName('head')[0] 
+		 || document.getElementsByTagName('body')[0]).appendChild(ds);
+	})();
+	</script>
+
+
+                </section>
+            </div>
+            <div class="footer">
+    <div class="pure-menu pure-menu-horizontal pure-menu-open">
+        <ul>
+            <li>Powered by <a class="hugo" href="http://hugo.spf13.com/" target="_blank">hugo</a></li>
+        </ul>
+    </div>
+</div>
+<script src="http://zhengyin.github.io//js/all.min.js"></script>
+        </div>
+    </div>
+</div>
+
+
+<script>
+(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+ga('create', 'UA-xxxxxx-xx', 'auto');
+ga('send', 'pageview');
+
+</script>
+
+</body>
+</html>
