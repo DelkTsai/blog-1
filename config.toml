@@ -1,4 +1,4 @@
-baseurl = "http://zhengyin.github.io/"
+baseurl = "/"
 languageCode = "en-us"
 title = "郑印"
 theme = "purehugo"
