@@ -2,7 +2,7 @@
 date        = "2016-04-10T09:07:06+08:00"
 title       = "mysql 主从复制，读写分离"
 description = "mysql 主从复制，读写分离"
-weight = 4
+weight = weight = 100
 +++
 
 

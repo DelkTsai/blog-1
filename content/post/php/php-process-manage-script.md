@@ -2,6 +2,7 @@
 date        = "2016-04-10T09:07:06+08:00"
 title       = "写一个PHP进程管理脚本"
 description = "写一个PHP进程管理脚本"
+weight = 99
 +++
 
 
