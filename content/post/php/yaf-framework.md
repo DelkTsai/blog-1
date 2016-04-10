@@ -29,7 +29,7 @@ Yaf是我很喜欢的一个PHP框架，也是我目前所在公司用的PHP框�
 16.	<a  href="http://bbs.houdunwang.com/thread-99875-1-1.html" target="_blank">在Yaf中定义内网接口，Yar的使用</a>
 17.	<a  href="http://bbs.houdunwang.com/thread-99900-1-1.html" target="_blank">在Yaf中使用命令行执行PHP</a>
 
-###<a style="color:#ccc;" href="javascript:void(0);" target="_blank">下载整套视频教程</a>
+### <a style="color:#ccc;" href="javascript:void(0);" target="_blank">下载整套视频教程</a>
 
 相关资源下载
 ---

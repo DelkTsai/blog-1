@@ -30,14 +30,14 @@ myql版本： 5.5
 	4.高可用性和故障切换
 	5.mysql升级测试
 
-#####复制如何工作
+##### 复制如何工作
     1.在主库上把数据更改记录到二进制日志(Binary Log)中(这些记录被称为二进制日志事件)。
     2.备库将主库上的日志复制到自己的中继日志(Relay Log)中。
     3.备库读取中继日志中的事件，将其重放到备库数据之上。
 
-#####复制配置
+##### 复制配置
 
-######1.创建复制账号
+###### 1.创建复制账号
 在主库上创建复制账号,在mysql终端中键入如下命令即可
 <pre>
 </code>
@@ -50,7 +50,7 @@ GRANT REPLICATION SLAVE  , REPLICATION  CLIENT ON *.* TO slave1 @"192.168.0.131"
             
 如果连接不成功，检查下主服务器上是否开放了对外连接，通常是防火墙设置问题。
 
-######2.配置主库和备库
+###### 2.配置主库和备库
 <pre>
 	<code>       
 主库配置：                        
@@ -70,7 +70,7 @@ log_bin = /data/mysql/logs/mysql-bin  // 二进制日志存放位置
 	留意下 File  ,Position 一会要用到，其中 File 是二进制日志名， Posttion 是数据点的位置
 
      			                
-######从库配置:
+###### 从库配置:
 <pre>
 	<code>       
 主库配置：                        
@@ -83,7 +83,7 @@ read_only = 1        //只读
     </code>
 </pre>  
             
-######3.启动复制
+###### 3.启动复制
 从库配置完后重启下mysql，进入终端[从库],键入如下命令:
 <pre><code>
 mysql> CHANGE MASTER TO MASTER_HOST='192.168.0.121',
@@ -161,9 +161,9 @@ mysql> select * from user;
 
 自此主从就配置完成了，当然这个配置很简单，这是基于主服务器，与从服务器都是新安装的mysql来的。    
 
-###使用Amoeba做读写分离
+### 使用Amoeba做读写分离
 
-######AMOEBA是什么
+###### AMOEBA是什么
    • 专注于分布式数据库代理层（ Database Proxy） 开发
    
    • 座落与 Client、 service之间,对客户端透明
@@ -172,11 +172,11 @@ mysql> select * from user;
    
    • 通过Amoeba你能够完成多数据源的高可用、负载均衡、数据切片的功能
    
-######读写分离结构图
+###### 读写分离结构图
 
 ![Mou icon](http://izhengyin.com/static/images/01.jpg)
 
-######准备工作
+###### 准备工作
     
         在线文档: http://docs.hexnova.com/amoeba/       
         下载地址：http://sourceforge.net/projects/amoeba/files/
@@ -194,7 +194,7 @@ mysql> select * from user;
                      vim ~/.zshrc
                      export PATH="$JAVA_HOME/bin:/usr/local/sbin:/opt/app/amoeba/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/mysql/bin" 
                      source ~/.zshrc     #根据你的shell而定
-######Amoeba主从配置
+###### Amoeba主从配置
         Amoeba 主要有三个配置文件
                 1.dbServers.xml            //配置一些集群上mysql的数据库连接参数
                 2.amoeba.xml              //Amoeba自身的配置，主机，端口，账号，密码,以及如何加载server,rule等。

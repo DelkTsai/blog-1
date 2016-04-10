@@ -12,21 +12,21 @@ description = "写一个PHP进程管理脚本"
 
 废话不多说，咱开始. 首先准备一些基础知识
 
-###Shell部分
+### Shell部分
 
 	1.如何后台运行一个PHP脚本，格式如下  "PHP执行路径  脚本路径  >> 日志路径  & " 如：/opt/app/php/bin/php worker.php >> /tmp/log.log & 
 	2.查看进程："ps aux | grep worker.php | grep -v grep"   (跟着上面的例子)
 	3.取得进程PID: "ps aux | grep worker.php | grep -v grep | awk '{print $2}'" 
 	4.杀死一个进程: kill -9 {Pid}
 
-###PHP部分
+### PHP部分
 
 	1.PHP执行Shell函数： shell_exec($cmd);  $cmd 就是Shell命令 返回Shell输出流
 	2.直接在PHP脚本中执行Shell: `ps aux | grep worker.php`  返回Shell输出流
 <!--more-->
 有了上面这些基础，下面的代码就比较简单了
 
-###程序代码部分 WorkerAdmin.php
+### 程序代码部分 WorkerAdmin.php
 
 
 ```
@@ -174,7 +174,7 @@ description = "写一个PHP进程管理脚本"
 
 实际上如果你的守护进程和你的应用程序息息相关,完全可以走配置的文件进行更好的管理,这需要修改下 WorkerAdmin
 
-###修改后的 WorkerAdmin.php
+### 修改后的 WorkerAdmin.php
 
 ```
 
