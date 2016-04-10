@@ -1,4 +1,4 @@
-baseurl = "/"
+baseurl = ""
 languageCode = "en-us"
 title = "郑印"
 theme = "purehugo"
