@@ -3,8 +3,7 @@ date        = "2016-04-10T09:07:06+08:00"
 title       = "在Yaf中使用Yar"
 description = "在Yaf中使用Yar"
 +++
-在Yaf中使用Yar 
-----
+
 
 本文提到的两个东西，都是 PHP 大神 惠新宸 的作品。
 
