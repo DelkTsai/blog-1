@@ -1,4 +1,4 @@
-baseurl = ""
+baseurl = "http://izhengyin.com/"
 languageCode = "en-us"
 title = "郑印"
 theme = "purehugo"
