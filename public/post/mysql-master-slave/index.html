@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>mysql 主从复制，读写分离 &middot; 郑印</title>
+
+    <meta name="description" content="mysql 主从复制，读写分离">
+
+    <meta name="generator" content="Hugo 0.14" />
+    <meta name="twitter:card" content="summary">
+    
+    <meta name="twitter:title" content="mysql 主从复制，读写分离 &middot; 郑印">
+    <meta name="twitter:description" content="mysql 主从复制，读写分离">
+
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="mysql 主从复制，读写分离 &middot; 郑印">
+    <meta property="og:description" content="mysql 主从复制，读写分离">
+
+    <link href='//fonts.googleapis.com/css?family=Source+Sans+Pro:400,700|Oxygen:400,700' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/pure/0.6.0/pure-min.css">
+    <!--[if lte IE 8]>
+        <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/pure/0.6.0/grids-responsive-old-ie-min.css">
+    <![endif]-->
+    <!--[if gt IE 8]><!-->
+        <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/pure/0.6.0/grids-responsive-min.css">
+    <!--<![endif]-->
+
+    <link rel="stylesheet" href="http://zhengyin.github.io//css/all.min.css">
+    <link href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css" rel="stylesheet">
+
+    <link rel="alternate" type="application/rss+xml" title="郑印" href="http://zhengyin.github.io//index.xml" />
+</head>
+<body>
+
+
+<div id="layout" class="pure-g">
+    <div class="sidebar pure-u-1 pure-u-md-1-4">
+    <div class="header">
+        <hgroup>
+            <h1 class="brand-title"><a href="http://zhengyin.github.io/">郑印</a></h1>
+            <h2 class="brand-tagline"> 85后程序员，目前在写PHP和Nodejs </h2>
+        </hgroup>
+
+        <nav class="nav">
+            <ul class="nav-list">
+                
+                
+                <li class="nav-item">
+                    <a class="pure-button" href="https://github.com/zhengyin "><i class="fa fa-github-alt"></i> Github</a>
+                </li>
+                
+                <li class="nav-item">
+                    <a class="pure-button" href="http://zhengyin.github.io//index.xml"><i class="fa fa-rss"></i> rss</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+</div>
+
+
+    <div class="content pure-u-1 pure-u-md-3-4">
+        <div>
+            
+            <div class="posts">
+                <h1 class="content-subhead">10 Apr 2016, 09:07</h1>
+                <section class="post">
+                    <header class="post-header">
+
+                        <a href="http://zhengyin.github.io/post/mysql-master-slave/" class="post-title">mysql 主从复制，读写分离</a>
+
+                        <p class="post-meta">
+                            
+                            
+                        </p>
+                    </header>
+                    
+                    <div class="post-description">
+                        
+
+<h2 id="mysql-主从复制-读写分离:f281d2723fb126937526c018d1f3d9eb">mysql 主从复制，读写分离</h2>
+
+<p>主从复制简单很好理解，简单来说就是把一台机器上的数据同步到另一台机器上面去，而读写分离也就是我们在操作mysql的时候，写的操作与读的操作不在作用于同一台数据库上，降低单机压力。</p>
+
+<p>首先我在本地装了三台虚拟机用于测试,它们的主机名和IP地址如下。</p>
+
+<pre><code> master   192.168.0.121        [ubuntu]
+ slave1   192.168.0.131        [debian]
+ slave2   192.168.0.141        [debian]
+</code></pre>
+
+<p>myql版本： 5.5</p>
+
+<p>以下关于mysql复制的一些内容摘自《高性能mysql》 一书，如果你对细节感兴趣，你可购买此书进行查阅。</p>
+
+<p>###MYSQL主从复制</p>
+
+<p>#####复制解决的问题</p>
+
+<pre><code>1.数据分布
+2.负载均衡
+3.备份
+4.高可用性和故障切换
+5.mysql升级测试
+</code></pre>
+
+<p>#####复制如何工作
+    1.在主库上把数据更改记录到二进制日志(Binary Log)中(这些记录被称为二进制日志事件)。
+    2.备库将主库上的日志复制到自己的中继日志(Relay Log)中。
+    3.备库读取中继日志中的事件，将其重放到备库数据之上。</p>
+
+<p>#####复制配置</p>
+
+<p>######1.创建复制账号
+在主库上创建复制账号,在mysql终端中键入如下命令即可
+<pre>
+</code>
+GRANT REPLICATION SLAVE  , REPLICATION  CLIENT ON <em>.</em> TO slave1 @&ldquo;192.168.0.131&rdquo;  IDENTFIED BY &ldquo;password&rdquo; ;
+</code>
+</pre>
+配置完成后在 从库上 连接下主库，避免后面出现一些不必要的麻烦,如同下面这样。</p>
+
+<pre><code>mysql -h192.168.0.121 -uslave1 -p&quot;password&quot;
+</code></pre>
+
+<p>如果连接不成功，检查下主服务器上是否开放了对外连接，通常是防火墙设置问题。</p>
+
+<p>######2.配置主库和备库
+<pre>
+    <code><br />
+主库配置：<br />
+[mysqld]
+server-id = 121            //保证唯一性，这里我取 ip 的最后几位
+log_bin = /data/mysql/logs/mysql-bin  // 二进制日志存放位置
+    </code>
+</pre><br />
+ 配置完成后从启主库，进入终端键入命令</p>
+
+<pre><code>mysql&gt; show master status;
++------------------+----------+--------------+------------------+
+| File             | Position | Binlog_Do_DB | Binlog_Ignore_DB |
++------------------+----------+--------------+------------------+
+| mysql-bin.000011 |     236 |              |                  |
++------------------+----------+--------------+------------------+                 
+留意下 File  ,Position 一会要用到，其中 File 是二进制日志名， Posttion 是数据点的位置
+</code></pre>
+
+<p>######从库配置:
+<pre>
+    <code><br />
+主库配置：<br />
+[mysqld]
+server-id = 131
+log_bin = /data/mysql/logs/mysql-bin
+relay_log = /data/mysql/logs/mysql-relay-bin    //中继日志
+log_slave_updates = 1    //允许备库将其重放的事件也记录到自身二进制日志中
+read_only = 1        //只读
+    </code>
+</pre></p>
+
+<p>######3.启动复制
+从库配置完后重启下mysql，进入终端[从库],键入如下命令:
+<pre><code>
+mysql&gt; CHANGE MASTER TO MASTER_HOST=&lsquo;192.168.0.121&rsquo;,
+    -&gt; MASTER_USER=&lsquo;slave1&rsquo;,
+    -&gt; MASTER_PASSWORD=&lsquo;password&rsquo;,
+    -&gt; MASTER_LOG_FILE=&lsquo;mysql-bin.000011&rsquo;,
+    -&gt; MASTER_LOG_POS=0;
+ #MASTER_LOG_FILE 指定主库二进制日志文件
+ #MASTER_LOG_POS 指定复制开始的位置
+</code></pre>
+这一步完成后，下面这个命令查看从库状态
+<pre><code>
+mysql&gt; SHOW SLAVE STATUS\G;
+*************************** 1. row ***************************
+       Slave_IO_State:
+        &hellip;&hellip;&hellip;.
+       Slave_IO_Running: No
+       Slave_SQL_Running: No
+       &hellip;&hellip;&hellip;.
+</code></pre>
+这几个地方显示着我们的复制还未开始,接下来启动复制.
+<pre><code>
+mysql&gt; START SLAVE;
+mysql&gt; SHOW SLAVE STATUS\G;
+*************************** 1. row **************************
+ Slave_IO_State: Waiting for master to send event
+ Slave_IO_Running: Yes
+ Slave_SQL_Running: Yes
+</code></pre>
+这样复制就开始运行了 ,创建一些数据测试下，下面的SQL就不解释了。
+主库：
+<pre><code>
+mysql&gt; create database test charset utf8;
+Query OK, 1 row affected (0.00 sec)</p>
+
+<p>mysql&gt; use test
+Database changed
+mysql&gt; create table user (uid int unsigned not null primary key auto_increment,name char(40) not null default &ldquo;);
+Query OK, 0 rows affected (0.01 sec)</p>
+
+<p>mysql&gt; insert into user set name=&lsquo;szws01&rsquo;;
+Query OK, 1 row affected (0.00 sec)</p>
+
+<p>mysql&gt; select * from user;
++&mdash;&ndash;+&mdash;&mdash;&ndash;+
+| uid | name   |
++&mdash;&ndash;+&mdash;&mdash;&ndash;+
+|   1 | szws01 |
++&mdash;&ndash;+&mdash;&mdash;&ndash;+
+1 row in set (0.00 sec)
+</code></pre>
+从库：
+<pre><code>
+mysql&gt; use test
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A</p>
+
+<p>Database changed
+mysql&gt; show tables;
++&mdash;&mdash;&mdash;&mdash;&mdash;-+
+| Tables_in_test |
++&mdash;&mdash;&mdash;&mdash;&mdash;-+
+| user           |
++&mdash;&mdash;&mdash;&mdash;&mdash;-+
+1 row in set (0.00 sec)</p>
+
+<p>mysql&gt; select * from user;
++&mdash;&ndash;+&mdash;&mdash;&ndash;+
+| uid | name   |
++&mdash;&ndash;+&mdash;&mdash;&ndash;+
+|   1 | szws01 |
++&mdash;&ndash;+&mdash;&mdash;&ndash;+
+1 row in set (0.00 sec)
+</code></pre></p>
+
+<p>自此主从就配置完成了，当然这个配置很简单，这是基于主服务器，与从服务器都是新安装的mysql来的。</p>
+
+<p>###使用Amoeba做读写分离</p>
+
+<p>######AMOEBA是什么
+   • 专注于分布式数据库代理层（ Database Proxy） 开发</p>
+
+<p>• 座落与 Client、 service之间,对客户端透明</p>
+
+<p>• 具有负载均衡、高可用性、可路由相关请求到目标数据库、 可并发请求多台数 据库合并结果</p>
+
+<p>• 通过Amoeba你能够完成多数据源的高可用、负载均衡、数据切片的功能</p>
+
+<p>######读写分离结构图</p>
+
+<p><img src="http://izhengyin.com/static/images/01.jpg" alt="Mou icon" /></p>
+
+<p>######准备工作</p>
+
+<pre><code>    在线文档: http://docs.hexnova.com/amoeba/       
+    下载地址：http://sourceforge.net/projects/amoeba/files/
+    本文使用的版本是： amoeba-mysql-binary-2.2.0[点击可下载]
+    使用之前需要安装 java jdk ,本文使用的是 jdk1.7
+    Amoeba安装很简单
+            1.下载对应的版本
+            2.解压到安装目录,本文解压到了 /opt/app/amoeba
+            3.进入   /opt/app/amoeba/bin  执行命令:
+                 ➜  bin  pwd
+                 /opt/app/amoeba/bin
+                 ➜  bin  ./amoeba
+                 amoeba start|stop
+                 看到以上信息就成了，这里我为了方便把该目录加到环境变量PATH里：
+                 vim ~/.zshrc
+                 export PATH=&quot;$JAVA_HOME/bin:/usr/local/sbin:/opt/app/amoeba/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/mysql/bin&quot; 
+                 source ~/.zshrc     #根据你的shell而定
+</code></pre>
+
+<p>######Amoeba主从配置
+        Amoeba 主要有三个配置文件
+                1.dbServers.xml            //配置一些集群上mysql的数据库连接参数
+                2.amoeba.xml              //Amoeba自身的配置，主机，端口，账号，密码,以及如何加载server,rule等。
+                3.rule.xml                     //路由配置，主要是数据切片的一些配置，读写分离这块可以不用。
+                配置文件放在   /opt/app/amoeba/conf/ 下。
+               xml的配置文件看起来有些乱，看横线分割部分吧。</p>
+
+<p>dbServers.xml 配置</p>
+
+<pre><code>    &lt;?xml version=&quot;1.0&quot; encoding=&quot;gbk&quot;?&gt; 
+
+    &lt;!DOCTYPE amoeba:dbServers SYSTEM &quot;dbserver.dtd&quot;&gt; 
+    &lt;amoeba:dbServers xmlns:amoeba=&quot;http://amoeba.meidusa.com/&quot;&gt; 
+    &lt;dbServer name=&quot;abstractServer&quot; abstractive=&quot;true&quot;&gt; 
+    &lt;factoryConfig class=&quot;com.meidusa.amoeba.mysql.net.MysqlServerConnectionFactory&quot;&gt; 
+    &lt;property name=&quot;manager&quot;&gt;${defaultManager}&lt;/property&gt;
+    &lt;property name=&quot;sendBufferSize&quot;&gt;64&lt;/property&gt;
+    &lt;property name=&quot;receiveBufferSize&quot;&gt;128&lt;/property&gt;
+
+    &lt;!-- mysql 连接主配置  --&gt;
+
+    &lt;property name=&quot;port&quot;&gt;3306&lt;/property&gt;
+    &lt;property name=&quot;schema&quot;&gt;test&lt;/property&gt;
+    &lt;!-- mysql user --&gt;
+    &lt;property name=&quot;user&quot;&gt;root&lt;/property&gt;
+    &lt;!-- mysql password --&gt;
+    &lt;property name=&quot;password&quot;&gt;password&lt;/property&gt;
+
+
+
+    &lt;/factoryConfig&gt; 
+    &lt;poolConfig class=&quot;com.meidusa.amoeba.net.poolable.PoolableObjectPool&quot;&gt; 
+    &lt;property name=&quot;maxActive&quot;&gt;500&lt;/property&gt;
+    &lt;property name=&quot;maxIdle&quot;&gt;500&lt;/property&gt;
+    &lt;property name=&quot;minIdle&quot;&gt;10&lt;/property&gt;
+    &lt;property name=&quot;minEvictableIdleTimeMillis&quot;&gt;600000&lt;/property&gt;
+    &lt;property name=&quot;timeBetweenEvictionRunsMillis&quot;&gt;600000&lt;/property&gt;
+    &lt;property name=&quot;testOnBorrow&quot;&gt;true&lt;/property&gt;
+    &lt;property name=&quot;testOnReturn&quot;&gt;true&lt;/property&gt;
+    &lt;property name=&quot;testWhileIdle&quot;&gt;true&lt;/property&gt;
+    &lt;/poolConfig&gt; 
+    &lt;/dbServer&gt; 
+
+    &lt;!-- 单个 server 配置 ,账号密码继承了主配置 --&gt;
+    &lt;dbServer name=&quot;master&quot; parent=&quot;abstractServer&quot;&gt; 
+    &lt;factoryConfig&gt;
+    &lt;property name=&quot;ipAddress&quot;&gt;192.168.0.121&lt;/property&gt;
+    &lt;/factoryConfig&gt;
+    &lt;/dbServer&gt; 
+    &lt;dbServer name=&quot;slave1&quot; parent=&quot;abstractServer&quot;&gt;
+    &lt;factoryConfig&gt;
+    &lt;property name=&quot;ipAddress&quot;&gt;192.168.0.131&lt;/property&gt;
+    &lt;/factoryConfig&gt;
+    &lt;/dbServer&gt; 
+    &lt;dbServer name=&quot;slave2&quot; parent=&quot;abstractServer&quot;&gt;
+    &lt;factoryConfig&gt;
+    &lt;property name=&quot;ipAddress&quot;&gt;192.168.0.141&lt;/property&gt;
+    &lt;/factoryConfig&gt;
+    &lt;/dbServer&gt;
+
+    &lt;!-- 单独为从库进行区分,按照 ROUNDROBIN  做负载均衡--&gt;
+    &lt;dbServer name=&quot;virtualSlave&quot; virtual=&quot;true&quot;&gt; 
+    &lt;poolConfig class=&quot;com.meidusa.amoeba.server.MultipleServerPool&quot;&gt;
+    &lt;!-- Load balancing strategy: 1=ROUNDROBIN , 2=WEIGHTBASED , 3=HA--&gt;
+    &lt;property name=&quot;loadbalance&quot;&gt;1&lt;/property&gt;
+    &lt;!-- Separated by commas,such as: server1,server2,server1 --&gt;
+    &lt;property name=&quot;poolNames&quot;&gt;slave1,slave2&lt;/property&gt;
+    &lt;/poolConfig&gt;
+    &lt;/dbServer&gt;
+    &lt;/amoeba:dbServers&gt; 
+</code></pre>
+
+<p>amoeba.xml 配置</p>
+
+<pre><code>    &lt;!-- service class must implements com.meidusa.amoeba.service.Service --&gt;
+    &lt;service name=&quot;Amoeba for Mysql&quot; class=&quot;com.meidusa.amoeba.net.ServerableConnectionManager&quot;&gt;
+            &lt;!--- 连接的ip和端口  ---&gt;
+
+            &lt;!-- port --&gt;
+            &lt;property name=&quot;port&quot;&gt;8066&lt;/property&gt;
+            &lt;!-- bind ipAddress --&gt;
+            &lt;property name=&quot;ipAddress&quot;&gt;127.0.0.1&lt;/property&gt;
+
+
+            &lt;property name=&quot;manager&quot;&gt;${clientConnectioneManager}&lt;/property&gt;
+
+            &lt;property name=&quot;connectionFactory&quot;&gt;
+                    &lt;bean class=&quot;com.meidusa.amoeba.mysql.net.MysqlClientConnectionFactory&quot;&gt;
+                            &lt;property name=&quot;sendBufferSize&quot;&gt;128&lt;/property&gt;
+                            &lt;property name=&quot;receiveBufferSize&quot;&gt;64&lt;/property&gt;
+                    &lt;/bean&gt;
+            &lt;/property&gt;
+
+            &lt;property name=&quot;authenticator&quot;&gt;
+                    &lt;bean class=&quot;com.meidusa.amoeba.mysql.server.MysqlClientAuthenticator&quot;&gt;
+
+           &lt;!--- 连接的用户与密码 ---&gt;
+                            &lt;property name=&quot;user&quot;&gt;root&lt;/property&gt;
+
+                            &lt;property name=&quot;password&quot;&gt;123456&lt;/property&gt;
+
+                            &lt;property name=&quot;filter&quot;&gt;
+                                    &lt;bean class=&quot;com.meidusa.amoeba.server.IPAccessController&quot;&gt;
+                                            &lt;property name=&quot;ipFile&quot;&gt;${amoeba.home}/conf/access_list.conf&lt;/property&gt;
+                                    &lt;/bean&gt;
+                            &lt;/property&gt;
+                    &lt;/bean&gt;
+            &lt;/property&gt;
+
+    &lt;/service&gt;
+
+    .................................
+
+    &lt;queryRouter class=&quot;com.meidusa.amoeba.mysql.parser.MysqlQueryRouter&quot;&gt;
+
+            &lt;property name=&quot;ruleLoader&quot;&gt;
+                    &lt;bean class=&quot;com.meidusa.amoeba.route.TableRuleFileLoader&quot;&gt;
+                            &lt;property name=&quot;ruleFile&quot;&gt;${amoeba.home}/conf/rule.xml&lt;/property&gt;
+                            &lt;property name=&quot;functionFile&quot;&gt;${amoeba.home}/conf/ruleFunctionMap.xml&lt;/property&gt;
+                    &lt;/bean&gt;
+            &lt;/property&gt;
+
+            &lt;property name=&quot;sqlFunctionFile&quot;&gt;${amoeba.home}/conf/functionMap.xml&lt;/property&gt;
+            &lt;property name=&quot;LRUMapSize&quot;&gt;1500&lt;/property&gt;
+            &lt;property name=&quot;defaultPool&quot;&gt;master&lt;/property&gt;
+            &lt;!-- 读写配置 --&gt;
+            &lt;property name=&quot;writePool&quot;&gt;master&lt;/property&gt;
+            &lt;property name=&quot;readPool&quot;&gt;virtualSlave&lt;/property&gt;
+
+            &lt;property name=&quot;needParse&quot;&gt;true&lt;/property&gt;
+    &lt;/queryRouter&gt;
+</code></pre>
+
+<p>启动Amoeba ：</p>
+
+<pre><code>➜  conf  amoeba start
+log4j:WARN log4j config load completed from file:/opt/app/amoeba/conf/log4j.xml
+  2015-01-11 15:19:17,732 INFO  context.MysqlRuntimeContext - Amoeba for Mysql current versoin=5.1.45-mysql-amoeba-proxy-2.2.0
+  log4j:WARN ip access config load completed from file:/opt/app/amoeba/conf/access_list.conf
+  2015-01-11 15:19:18,053 INFO  net.ServerableConnectionManager - Amoeba for Mysql listening on /127.0.0.1:8066.
+  2015-01-11 15:19:18,059 INFO  net.ServerableConnectionManager - Amoeba Monitor Server listening on /127.0.0.1:894.
+</code></pre>
+
+<p>打开一个新终端,连接Amoeba:</p>
+
+<pre><code>➜  amoeba  mysql -h127.0.0.1 -uroot -p123456 -P8066
+   Welcome to the MySQL monitor.  Commands end with ; or \g.
+   Your MySQL connection id is 1226617162
+   Server version: 5.1.45-mysql-amoeba-proxy-2.2.0 Source distribution
+
+   Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+
+   Oracle is a registered trademark of Oracle Corporation and/or its
+   affiliates. Other names may be trademarks of their respective
+   owners.
+
+   Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+   mysql&gt;
+</code></pre>
+
+<p>看起来和正常进入mysql一样，你可以通过    Server version 区分它与mysql，下面做一些操作测试，怎样使用mysql怎样使用它。</p>
+
+<pre><code>mysql&gt; show databases;
+    +--------------------+
+    | Database           |
+    +--------------------+
+    | information_schema |
+    | logs               |
+    | mysql              |
+    | performance_schema |
+    | test               |
+    +--------------------+
+    5 rows in set (0.00 sec)
+    mysql&gt; use test
+    Database changed
+    mysql&gt; select * from user;
+    +-----+--------+
+    | uid | name   |
+    +-----+--------+
+    |   1 | szws01 |
+    +-----+--------+
+    1 row in set (0.00 sec)
+    mysql&gt;
+</code></pre>
+
+<p>可以看到和我们之前数据是一样的，接下来测试下读写分离。</p>
+
+<p>1.停掉从库 ,在 slave1 slave2 终端键入:</p>
+
+<pre><code>    STOP SLAVE;                  
+</code></pre>
+
+<p>2.在Amoeba 终端写入数据,然后在查询.</p>
+
+<pre><code>    mysql&gt; insert into user set name ='Amoeba';
+    Query OK, 1 row affected (0.00 sec)
+
+    mysql&gt; select * from user;
+    +-----+--------+
+    | uid | name   |
+    +-----+--------+
+    |   1 | szws01 |
+    +-----+--------+
+    1 row in set (0.00 sec)
+</code></pre>
+
+<p>查询发现刚才的数据找不到了，别着急我们去主库找找。</p>
+
+<pre><code>➜  amoeba  mysql -uroot -p                        
+Enter password:
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 20
+Server version: 5.5.41-log Source distribution
+
+Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql&gt; use test
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+mysql&gt; select * from user;
++-----+--------+
+| uid | name   |
++-----+--------+
+|   1 | szws01 |
+|   2 | Amoeba |
++-----+--------+
+2 rows in set (0.00 sec)
+</code></pre>
+
+<p>因为我们刚才关闭了主从，所以主库的数据并没有同步到从库，然而我们配置Amoeba的时候，设置了读是从 slave1,slave2上面读的，
+所以没有查询到是正常的，接下来打开主从，slave1,slave2 执行命令:</p>
+
+<pre><code>START SLAVE;
+</code></pre>
+
+<p>然后在 Amoeba 终端中查询：</p>
+
+<pre><code>mysql&gt; select * from user;
++-----+--------+
+ | uid | name   |
+ +-----+--------+
+ |   1 | szws01 |
+ |   2 | Amoeba |
+ +-----+--------+
+ 2 rows in set (0.00 sec)
+</code></pre>
+
+<p>现在有结果了，至此这篇文章就结束了，总体来说，不论是mysql主从还是Amoeba配置都是比较简单的。</p>
+
+
+                    </div>
+                    
+                        <div class="post-share">
+                            <div class="bdsharebuttonbox"><a href="#" class="bds_more" data-cmd="more"></a><a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a><a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a><a href="#" class="bds_tqq" data-cmd="tqq" title="分享到腾讯微博"></a><a href="#" class="bds_renren" data-cmd="renren" title="分享到人人网"></a><a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a></div>
+<script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdPic":"","bdStyle":"0","bdSize":"16"},"share":{}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+                        </div>
+                    
+                    
+<div class="ds-thread" data-thread-key="mysql 主从复制，读写分离" data-title="mysql 主从复制，读写分离" data-url=""></div>
+
+
+<script type="text/javascript">
+var duoshuoQuery = {short_name:"izhengyin"};
+	(function() {
+		var ds = document.createElement('script');
+		ds.type = 'text/javascript';ds.async = true;
+		ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+		ds.charset = 'UTF-8';
+		(document.getElementsByTagName('head')[0] 
+		 || document.getElementsByTagName('body')[0]).appendChild(ds);
+	})();
+	</script>
+
+
+                </section>
+            </div>
+            <div class="footer">
+    <div class="pure-menu pure-menu-horizontal pure-menu-open">
+        <ul>
+            <li>Powered by <a class="hugo" href="http://hugo.spf13.com/" target="_blank">hugo</a></li>
+        </ul>
+    </div>
+</div>
+<script src="http://zhengyin.github.io//js/all.min.js"></script>
+        </div>
+    </div>
+</div>
+
+
+<script>
+(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+ga('create', 'UA-xxxxxx-xx', 'auto');
+ga('send', 'pageview');
+
+</script>
+
+</body>
+</html>

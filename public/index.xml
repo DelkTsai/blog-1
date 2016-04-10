@@ -2,18 +2,189 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>郑印</title>
-    <link>http://localhost:1313/</link>
+    <link>http://zhengyin.github.io/</link>
     <description>Recent content on 郑印</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <atom:link href="http://localhost:1313/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sun, 10 Apr 2016 09:07:06 +0800</lastBuildDate>
+    <atom:link href="http://zhengyin.github.io/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Socket.io的实时竞拍系统实现</title>
+      <link>http://zhengyin.github.io/post/socketio-bid/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
+      
+      <guid>http://zhengyin.github.io/post/socketio-bid/</guid>
+      <description>&lt;p&gt;某天张同学来到了一个拍卖网站，看中了一件心仪的拍品，于是他愉快的参与了竞价，并处于了领先的地位，随后张同学死死盯住拍品倒计时和领先者，在倒计时结束后发现领先者还是他自己，正当他欣喜若狂准备付款时，页面刷新发现拍品已被别人抢走。后来当张同学在次来到网站，便长了记性，开始无止境的F5~&lt;/p&gt;
+
+&lt;p&gt;当然我们不能这样折腾我们的用户，那么如何实现拍品信息实时更新？ 要解决这个需求，实际上需要服务端主动“推” 信息到客户端。而客户端想要得到服务端推送的信息，实际上需要和服务端建立一个长连接，这样服务端才能通过这个连接把信息传递到客户端，也就是所谓“推”的概念，下面有篇文章详细介绍了WEB推送的系统的客户端实现方式：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://www.ibm.com/developerworks/cn/web/wa-lo-comet/&#34;&gt;Comet：基于 HTTP 长连接的“服务器推”技术&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Nginx也有相应的模块进行服务端的支持：&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://www.nginx.com/resources/wiki/modules/push_stream/&#34;&gt;HTTP Push Stream&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;这里我们主要来说说通过Node平台下的Socket.io如何实现，首先来看下具体的业务场景是什么,一个最基本的实时竞拍系统应该包含以下三个场景：&lt;/p&gt;
+
+&lt;ol&gt;
+&lt;li&gt;一个或者多个用户关注着某一个拍品&lt;/li&gt;
+&lt;li&gt;当其中某个用户出价后，更新数据库中该拍品的信息&lt;/li&gt;
+&lt;li&gt;将最新的拍品信息反应到关注该拍品用户的客户端上&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;那么根据这三个场景，能够确认推送的一个大概思路，也就是 “当拍品出价成功后，取得最新的拍品信息，推送给关注该拍品的所有用户”，基于这个思路可以确定一个大概的推送流程图:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://upload-images.jianshu.io/upload_images/1639948-8c0ede3a86d71389.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240&#34; alt=&#34;推送流程图.png&#34; /&gt;&lt;/p&gt;
+
+&lt;p&gt;这个流程图中分为4个部分：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;客户端(接受推送消息，已经出价)&lt;/li&gt;
+&lt;li&gt;竞价接口(处理竞价逻辑，加入拍品到推送队列)&lt;/li&gt;
+&lt;li&gt;队列处理(取出需要推送的拍品调用推送API)&lt;/li&gt;
+&lt;li&gt;推送服务(提供socket.io的服务端供客户端进行&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;连接，并提供一组推送的内网API供应用程序调用)&lt;/p&gt;
+
+&lt;p&gt;根据以上流程，竞价接口以及队列处理我们可以采用任意的语言去实现，这里不在延伸。这两部分中队列处理，根据具体业务可以省去，这里引入队列处理的目的主要是考虑到，推送服务本身与竞价流程解耦，以及当推送服务故障时，失败队列的维护,当然如果使用队列，也需要考虑队列处理的及时性，避免推送信息的不及时。&lt;/p&gt;
+
+&lt;p&gt;下面来看看推送服务如何构建:&lt;/p&gt;
+
+&lt;p&gt;(以下均是伪代码,只为说明具体思路)&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;
+      var http = require(&amp;quot;http&amp;quot;);
+      http.globalAgent.maxSockets = Infinity;
+      var koa = require(&#39;koa&#39;);
+      var app = koa();
+      var bodyParser = require(&#39;koa-bodyparser&#39;);
+      var route = require(&#39;koa-route&#39;);
+      var io = require(&#39;socket.io&#39;);
+      var ioRedis = require(&#39;socket.io-redis&#39;);
+      var ioEmitter = require(&#39;socket.io-emitter&#39;)({ host: &#39;127.0.0.1&#39;, port: &#39;6379&#39; });
+      var server = http.createServer(app.callback());
+
+      io = io(server);
+
+      io.adapter(ioRedis({ host :&#39;127.0.0.1&#39;, prot :&#39;6379&#39;}));
+
+      /**************  推送API ******************/
+      app.use(bodyParser());
+      app.use(route.post(&#39;/pub&#39;, function *(next){
+
+          var data = this.request.body;
+
+          if(!data || typeof data != &#39;object&#39;){
+              this.throw(&#39;data error&#39;, 400);
+          }
+
+          var room = data.itemId;
+          var channel = data.channel;
+          var message = data.message;
+
+          ioEmitter.to(room).emit(channel,message);   
+
+          this.body = &#39;ok&#39;;
+          
+      }));
+      app.use(function *(){
+        this.response.status = 404;
+      })
+      /*****************************************/
+
+      /*************Socket.io Server ***********/
+      io.use(function(socket,next){
+          var itemId = socket.handshake.query.itemId;
+          socket.room = itemId;
+          return next();
+      });
+      io.on(&#39;connection&#39;,function(socket){
+          socket.join(socket.room);
+      });
+      /*****************************************/
+
+
+
+
+      server.listen(3000,function(){});
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;推送服务实际上起到的是一个中间层的作用，下面看下客户端与服务端如何和它配合：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;客户端代码&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code&gt;  &amp;lt;script&amp;gt;
+    var socket = io(&#39;http://推送服务地址:3000?itemId=100&#39;);
+    socket.on(&#39;auction&#39;, function (data) {
+          //调用 Dom 更新拍品信息
+    });
+  &amp;lt;/script&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;客户端在连接是指明了itemId(假设它是拍品ID),这样在推送服务能够对其进行房间的划分,也就是在 socket.join(socket.room) 的时候。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;服务端代码(PHP)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code&gt;        
+	private function http($data){
+               /** 
+                    $data = array(
+                          &#39;itemId&#39;=&amp;gt;100,            //指明推送拍品
+                          &#39;channel&#39;=&amp;gt;&#39;auction&#39;,  //指明推送到的渠道
+                          &#39;message&#39;=&amp;gt;array( )  //最新的拍品信息
+                    );
+               */
+
+		$server = $this-&amp;gt;getServer();  // http://127.0.0.1:3000/pub
+		$ch = curl_init();
+		curl_setopt($ch, CURLOPT_URL, $server);
+		curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+		curl_setopt($ch, CURLOPT_POSTFIELDS,http_build_query($data));
+		curl_setopt($ch, CURLOPT_HEADER, 0);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+		$response = curl_exec($ch);
+		if(curl_errno($ch)){
+			throw new \Exception(&#39;curl_error  &#39;.curl_error($ch));
+		}else{
+			if(strtolower($response) == &#39;ok&#39;){    
+				curl_close($ch);
+				return true;
+			}else{
+				throw new \Exception(&#39;response_error  &#39;.$response);
+		}
+			}
+		curl_close($ch);
+		return false;
+	}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;服务端在推送时，调用 &amp;ldquo;&lt;a href=&#34;http://127.0.0.1:3000/pub&amp;quot;&#34;&gt;http://127.0.0.1:3000/pub&amp;quot;&lt;/a&gt; ，也就是有 koa 搭建的http推送API ，并传入想应格式的数据，指明推送的拍品，渠道，信息。这样在 koa 接受到请求后，调用    ioEmitter.to(room).emit(channel,message);    将信息推送到客户端，这样就走完了一个流程。&lt;/p&gt;
+
+&lt;p&gt;总结：&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;实时推送实际上就是消息的发布/订阅，客户端是消息订阅方，服务端是消息的发布方&lt;/li&gt;
+&lt;li&gt;推送服务也就是消息发布/订阅的服务&lt;/li&gt;
+&lt;li&gt;推送与竞价可以是两套不同业务，应该考虑解耦&lt;/li&gt;
+&lt;li&gt;使用Socket.io做Web的实时推送，代码量小，可控性高&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
     
     <item>
       <title>php操作mongodb笔记</title>
-      <link>http://localhost:1313/post/mongodb-note/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <link>http://zhengyin.github.io/post/mongodb-note/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
       
-      <guid>http://localhost:1313/post/mongodb-note/</guid>
+      <guid>http://zhengyin.github.io/post/mongodb-note/</guid>
       <description>&lt;p&gt;大致把它分为了如下几块记录&lt;/p&gt;
 
 &lt;ul&gt;
@@ -38,80 +209,11 @@ $o-&amp;gt;$act();
     </item>
     
     <item>
-      <title>Yaf 框架视频教程</title>
-      <link>http://localhost:1313/post/yaf-framework/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-      
-      <guid>http://localhost:1313/post/yaf-framework/</guid>
-      <description>
-
-&lt;h1 id=&#34;yaf-框架视频教程:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;Yaf 框架视频教程&lt;/h1&gt;
-
-&lt;p&gt;Yaf是我很喜欢的一个PHP框架，也是我目前所在公司用的PHP框架，以前录制过一些视频课程，前段时间起心，想把Yaf也录制一下，同时也可以分享下工作中怎么去使用Yaf的，所以就有了这套视频。目前17课，课程我尽量简短，所以时间不会太长，这套课程适合一些刚使用PHP开发不久的同学，如果你已经工作几年了，Yaf手册应该会更节约你的时间。&lt;/p&gt;
-
-&lt;h2 id=&#34;课程列表:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;课程列表&lt;/h2&gt;
-
-&lt;ol&gt;
-&lt;li&gt;&lt;a href=&#34;http://bbs.houdunwang.com/thread-99589-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf介绍&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99590-1-1.html&#34; target=&#34;_blank&#34;&gt;使用vagrant 统一开发环境&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99591-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf的安装与ide配置&lt;/a&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99592-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf的nginx配置&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99593-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf运行流程&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99687-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf,Bootstarp介绍&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a href=&#34;http://bbs.houdunwang.com/thread-99696-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf配置&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99697-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf类库的加载规则&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99698-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf模块与控制器&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a href=&#34;http://bbs.houdunwang.com/thread-99699-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf路由&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99700-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf视图&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99701-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf请求与响应&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99702-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf模型的使用&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99703-1-1.html&#34; target=&#34;_blank&#34;&gt;使用Yaf过程中，目录结构的划分&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99854-1-1.html&#34; target=&#34;_blank&#34;&gt;使用Yaf过程中，保持开发模式的统一&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99875-1-1.html&#34; target=&#34;_blank&#34;&gt;在Yaf中定义内网接口，Yar的使用&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-
-&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99900-1-1.html&#34; target=&#34;_blank&#34;&gt;在Yaf中使用命令行执行PHP&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
-&lt;/ol&gt;
-
-&lt;p&gt;###&lt;a style=&#34;color:#ccc;&#34; href=&#34;javascript:void(0);&#34; target=&#34;_blank&#34;&gt;下载整套视频教程&lt;/a&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;相关资源下载:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;相关资源下载&lt;/h2&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&lt;a href=&#34;http://pan.baidu.com/s/1hqk3pcg&#34; target=&#34;_blank&#34;&gt;课程中使用的开发环境Box文件&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;http://pan.baidu.com/s/1dD13CEt&#34; target=&#34;_blank&#34;&gt;课程中使用的源代码&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;https://github.com/zhengyin/izhengyin-yaf-libs&#34; target=&#34;_blank&#34;&gt;博客所使用的Yaf类库&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;相关参考链接:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;相关参考链接&lt;/h2&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&lt;a href=&#34;http://www.laruence.com/manual/&#34; target=&#34;_blank&#34;&gt;Yaf手册&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;http://php.net/manual/zh/book.yar.php&#34; target=&#34;_blank&#34;&gt;Yar手册&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;http://www.laruence.com/2012/09/15/2779.html&#34; target=&#34;_blank&#34;&gt;Yar介绍博文&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;http://segmentfault.com/a/1190000000264347&#34; target=&#34;_blank&#34;&gt;使用 Vagrant 打造跨平台开发环境&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-</description>
-    </item>
-    
-    <item>
       <title>mysql 主从复制，读写分离</title>
-      <link>http://localhost:1313/post/mysql-master-slave/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <link>http://zhengyin.github.io/post/mysql-master-slave/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
       
-      <guid>http://localhost:1313/post/mysql-master-slave/</guid>
+      <guid>http://zhengyin.github.io/post/mysql-master-slave/</guid>
       <description>
 
 &lt;h2 id=&#34;mysql-主从复制-读写分离:f281d2723fb126937526c018d1f3d9eb&#34;&gt;mysql 主从复制，读写分离&lt;/h2&gt;
@@ -569,181 +671,11 @@ mysql&amp;gt; select * from user;
     </item>
     
     <item>
-      <title>Socket.io的实时竞拍系统实现</title>
-      <link>http://localhost:1313/post/socketio-bid/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-      
-      <guid>http://localhost:1313/post/socketio-bid/</guid>
-      <description>&lt;p&gt;某天张同学来到了一个拍卖网站，看中了一件心仪的拍品，于是他愉快的参与了竞价，并处于了领先的地位，随后张同学死死盯住拍品倒计时和领先者，在倒计时结束后发现领先者还是他自己，正当他欣喜若狂准备付款时，页面刷新发现拍品已被别人抢走。后来当张同学在次来到网站，便长了记性，开始无止境的F5~&lt;/p&gt;
-
-&lt;p&gt;当然我们不能这样折腾我们的用户，那么如何实现拍品信息实时更新？ 要解决这个需求，实际上需要服务端主动“推” 信息到客户端。而客户端想要得到服务端推送的信息，实际上需要和服务端建立一个长连接，这样服务端才能通过这个连接把信息传递到客户端，也就是所谓“推”的概念，下面有篇文章详细介绍了WEB推送的系统的客户端实现方式：&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://www.ibm.com/developerworks/cn/web/wa-lo-comet/&#34;&gt;Comet：基于 HTTP 长连接的“服务器推”技术&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Nginx也有相应的模块进行服务端的支持：&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://www.nginx.com/resources/wiki/modules/push_stream/&#34;&gt;HTTP Push Stream&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;这里我们主要来说说通过Node平台下的Socket.io如何实现，首先来看下具体的业务场景是什么,一个最基本的实时竞拍系统应该包含以下三个场景：&lt;/p&gt;
-
-&lt;ol&gt;
-&lt;li&gt;一个或者多个用户关注着某一个拍品&lt;/li&gt;
-&lt;li&gt;当其中某个用户出价后，更新数据库中该拍品的信息&lt;/li&gt;
-&lt;li&gt;将最新的拍品信息反应到关注该拍品用户的客户端上&lt;/li&gt;
-&lt;/ol&gt;
-
-&lt;p&gt;那么根据这三个场景，能够确认推送的一个大概思路，也就是 “当拍品出价成功后，取得最新的拍品信息，推送给关注该拍品的所有用户”，基于这个思路可以确定一个大概的推送流程图:&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://upload-images.jianshu.io/upload_images/1639948-8c0ede3a86d71389.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240&#34; alt=&#34;推送流程图.png&#34; /&gt;&lt;/p&gt;
-
-&lt;p&gt;这个流程图中分为4个部分：&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;客户端(接受推送消息，已经出价)&lt;/li&gt;
-&lt;li&gt;竞价接口(处理竞价逻辑，加入拍品到推送队列)&lt;/li&gt;
-&lt;li&gt;队列处理(取出需要推送的拍品调用推送API)&lt;/li&gt;
-&lt;li&gt;推送服务(提供socket.io的服务端供客户端进行&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;连接，并提供一组推送的内网API供应用程序调用)&lt;/p&gt;
-
-&lt;p&gt;根据以上流程，竞价接口以及队列处理我们可以采用任意的语言去实现，这里不在延伸。这两部分中队列处理，根据具体业务可以省去，这里引入队列处理的目的主要是考虑到，推送服务本身与竞价流程解耦，以及当推送服务故障时，失败队列的维护,当然如果使用队列，也需要考虑队列处理的及时性，避免推送信息的不及时。&lt;/p&gt;
-
-&lt;p&gt;下面来看看推送服务如何构建:&lt;/p&gt;
-
-&lt;p&gt;(以下均是伪代码,只为说明具体思路)&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;
-      var http = require(&amp;quot;http&amp;quot;);
-      http.globalAgent.maxSockets = Infinity;
-      var koa = require(&#39;koa&#39;);
-      var app = koa();
-      var bodyParser = require(&#39;koa-bodyparser&#39;);
-      var route = require(&#39;koa-route&#39;);
-      var io = require(&#39;socket.io&#39;);
-      var ioRedis = require(&#39;socket.io-redis&#39;);
-      var ioEmitter = require(&#39;socket.io-emitter&#39;)({ host: &#39;127.0.0.1&#39;, port: &#39;6379&#39; });
-      var server = http.createServer(app.callback());
-
-      io = io(server);
-
-      io.adapter(ioRedis({ host :&#39;127.0.0.1&#39;, prot :&#39;6379&#39;}));
-
-      /**************  推送API ******************/
-      app.use(bodyParser());
-      app.use(route.post(&#39;/pub&#39;, function *(next){
-
-          var data = this.request.body;
-
-          if(!data || typeof data != &#39;object&#39;){
-              this.throw(&#39;data error&#39;, 400);
-          }
-
-          var room = data.itemId;
-          var channel = data.channel;
-          var message = data.message;
-
-          ioEmitter.to(room).emit(channel,message);   
-
-          this.body = &#39;ok&#39;;
-          
-      }));
-      app.use(function *(){
-        this.response.status = 404;
-      })
-      /*****************************************/
-
-      /*************Socket.io Server ***********/
-      io.use(function(socket,next){
-          var itemId = socket.handshake.query.itemId;
-          socket.room = itemId;
-          return next();
-      });
-      io.on(&#39;connection&#39;,function(socket){
-          socket.join(socket.room);
-      });
-      /*****************************************/
-
-
-
-
-      server.listen(3000,function(){});
-
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;推送服务实际上起到的是一个中间层的作用，下面看下客户端与服务端如何和它配合：&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;客户端代码&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;pre&gt;&lt;code&gt;  &amp;lt;script&amp;gt;
-    var socket = io(&#39;http://推送服务地址:3000?itemId=100&#39;);
-    socket.on(&#39;auction&#39;, function (data) {
-          //调用 Dom 更新拍品信息
-    });
-  &amp;lt;/script&amp;gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;客户端在连接是指明了itemId(假设它是拍品ID),这样在推送服务能够对其进行房间的划分,也就是在 socket.join(socket.room) 的时候。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;服务端代码(PHP)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;pre&gt;&lt;code&gt;        
-	private function http($data){
-               /** 
-                    $data = array(
-                          &#39;itemId&#39;=&amp;gt;100,            //指明推送拍品
-                          &#39;channel&#39;=&amp;gt;&#39;auction&#39;,  //指明推送到的渠道
-                          &#39;message&#39;=&amp;gt;array( )  //最新的拍品信息
-                    );
-               */
-
-		$server = $this-&amp;gt;getServer();  // http://127.0.0.1:3000/pub
-		$ch = curl_init();
-		curl_setopt($ch, CURLOPT_URL, $server);
-		curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-		curl_setopt($ch, CURLOPT_POSTFIELDS,http_build_query($data));
-		curl_setopt($ch, CURLOPT_HEADER, 0);
-		curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-		$response = curl_exec($ch);
-		if(curl_errno($ch)){
-			throw new \Exception(&#39;curl_error  &#39;.curl_error($ch));
-		}else{
-			if(strtolower($response) == &#39;ok&#39;){    
-				curl_close($ch);
-				return true;
-			}else{
-				throw new \Exception(&#39;response_error  &#39;.$response);
-		}
-			}
-		curl_close($ch);
-		return false;
-	}
-
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;服务端在推送时，调用 &amp;ldquo;&lt;a href=&#34;http://127.0.0.1:3000/pub&amp;quot;&#34;&gt;http://127.0.0.1:3000/pub&amp;quot;&lt;/a&gt; ，也就是有 koa 搭建的http推送API ，并传入想应格式的数据，指明推送的拍品，渠道，信息。这样在 koa 接受到请求后，调用    ioEmitter.to(room).emit(channel,message);    将信息推送到客户端，这样就走完了一个流程。&lt;/p&gt;
-
-&lt;p&gt;总结：&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;实时推送实际上就是消息的发布/订阅，客户端是消息订阅方，服务端是消息的发布方&lt;/li&gt;
-&lt;li&gt;推送服务也就是消息发布/订阅的服务&lt;/li&gt;
-&lt;li&gt;推送与竞价可以是两套不同业务，应该考虑解耦&lt;/li&gt;
-&lt;li&gt;使用Socket.io做Web的实时推送，代码量小，可控性高&lt;/li&gt;
-&lt;/ul&gt;
-</description>
-    </item>
-    
-    <item>
       <title>写一个PHP进程管理脚本</title>
-      <link>http://localhost:1313/post/php-process-manage-script/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <link>http://zhengyin.github.io/post/php-process-manage-script/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
       
-      <guid>http://localhost:1313/post/php-process-manage-script/</guid>
+      <guid>http://zhengyin.github.io/post/php-process-manage-script/</guid>
       <description>
 
 &lt;h2 id=&#34;写一个php进程管理脚本:d023dbfb12a7f9e4fc02119184930127&#34;&gt;写一个PHP进程管理脚本&lt;/h2&gt;
@@ -1071,11 +1003,80 @@ php WorkerAdmin.php worker stop  停止
     </item>
     
     <item>
-      <title>在Yaf中使用Yar</title>
-      <link>http://localhost:1313/post/yaf-yar/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <title>Yaf 框架视频教程</title>
+      <link>http://zhengyin.github.io/post/yaf-framework/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
       
-      <guid>http://localhost:1313/post/yaf-yar/</guid>
+      <guid>http://zhengyin.github.io/post/yaf-framework/</guid>
+      <description>
+
+&lt;h1 id=&#34;yaf-框架视频教程:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;Yaf 框架视频教程&lt;/h1&gt;
+
+&lt;p&gt;Yaf是我很喜欢的一个PHP框架，也是我目前所在公司用的PHP框架，以前录制过一些视频课程，前段时间起心，想把Yaf也录制一下，同时也可以分享下工作中怎么去使用Yaf的，所以就有了这套视频。目前17课，课程我尽量简短，所以时间不会太长，这套课程适合一些刚使用PHP开发不久的同学，如果你已经工作几年了，Yaf手册应该会更节约你的时间。&lt;/p&gt;
+
+&lt;h2 id=&#34;课程列表:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;课程列表&lt;/h2&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;http://bbs.houdunwang.com/thread-99589-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf介绍&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99590-1-1.html&#34; target=&#34;_blank&#34;&gt;使用vagrant 统一开发环境&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99591-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf的安装与ide配置&lt;/a&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99592-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf的nginx配置&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99593-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf运行流程&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99687-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf,Bootstarp介绍&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a href=&#34;http://bbs.houdunwang.com/thread-99696-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf配置&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99697-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf类库的加载规则&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99698-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf模块与控制器&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a href=&#34;http://bbs.houdunwang.com/thread-99699-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf路由&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99700-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf视图&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99701-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf请求与响应&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99702-1-1.html&#34; target=&#34;_blank&#34;&gt;Yaf模型的使用&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99703-1-1.html&#34; target=&#34;_blank&#34;&gt;使用Yaf过程中，目录结构的划分&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99854-1-1.html&#34; target=&#34;_blank&#34;&gt;使用Yaf过程中，保持开发模式的统一&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99875-1-1.html&#34; target=&#34;_blank&#34;&gt;在Yaf中定义内网接口，Yar的使用&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;&lt;a  href=&#34;http://bbs.houdunwang.com/thread-99900-1-1.html&#34; target=&#34;_blank&#34;&gt;在Yaf中使用命令行执行PHP&lt;/a&gt;&lt;/p&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;###&lt;a style=&#34;color:#ccc;&#34; href=&#34;javascript:void(0);&#34; target=&#34;_blank&#34;&gt;下载整套视频教程&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;相关资源下载:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;相关资源下载&lt;/h2&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://pan.baidu.com/s/1hqk3pcg&#34; target=&#34;_blank&#34;&gt;课程中使用的开发环境Box文件&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://pan.baidu.com/s/1dD13CEt&#34; target=&#34;_blank&#34;&gt;课程中使用的源代码&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/zhengyin/izhengyin-yaf-libs&#34; target=&#34;_blank&#34;&gt;博客所使用的Yaf类库&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;相关参考链接:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;相关参考链接&lt;/h2&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.laruence.com/manual/&#34; target=&#34;_blank&#34;&gt;Yaf手册&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://php.net/manual/zh/book.yar.php&#34; target=&#34;_blank&#34;&gt;Yar手册&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.laruence.com/2012/09/15/2779.html&#34; target=&#34;_blank&#34;&gt;Yar介绍博文&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://segmentfault.com/a/1190000000264347&#34; target=&#34;_blank&#34;&gt;使用 Vagrant 打造跨平台开发环境&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>在Yaf中使用Yar</title>
+      <link>http://zhengyin.github.io/post/yaf-yar/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
+      
+      <guid>http://zhengyin.github.io/post/yaf-yar/</guid>
       <description>
 
 &lt;h2 id=&#34;在yaf中使用yar:7ca2c6e4bdcb04df6c1f3d2a41a1f959&#34;&gt;在Yaf中使用Yar&lt;/h2&gt;

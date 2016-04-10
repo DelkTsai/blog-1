@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>写一个PHP进程管理脚本 &middot; 郑印</title>
+
+    <meta name="description" content="写一个PHP进程管理脚本">
+
+    <meta name="generator" content="Hugo 0.14" />
+    <meta name="twitter:card" content="summary">
+    
+    <meta name="twitter:title" content="写一个PHP进程管理脚本 &middot; 郑印">
+    <meta name="twitter:description" content="写一个PHP进程管理脚本">
+
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="写一个PHP进程管理脚本 &middot; 郑印">
+    <meta property="og:description" content="写一个PHP进程管理脚本">
+
+    <link href='//fonts.googleapis.com/css?family=Source+Sans+Pro:400,700|Oxygen:400,700' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/pure/0.6.0/pure-min.css">
+    <!--[if lte IE 8]>
+        <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/pure/0.6.0/grids-responsive-old-ie-min.css">
+    <![endif]-->
+    <!--[if gt IE 8]><!-->
+        <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/pure/0.6.0/grids-responsive-min.css">
+    <!--<![endif]-->
+
+    <link rel="stylesheet" href="http://zhengyin.github.io//css/all.min.css">
+    <link href="//maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css" rel="stylesheet">
+
+    <link rel="alternate" type="application/rss+xml" title="郑印" href="http://zhengyin.github.io//index.xml" />
+</head>
+<body>
+
+
+<div id="layout" class="pure-g">
+    <div class="sidebar pure-u-1 pure-u-md-1-4">
+    <div class="header">
+        <hgroup>
+            <h1 class="brand-title"><a href="http://zhengyin.github.io/">郑印</a></h1>
+            <h2 class="brand-tagline"> 85后程序员，目前在写PHP和Nodejs </h2>
+        </hgroup>
+
+        <nav class="nav">
+            <ul class="nav-list">
+                
+                
+                <li class="nav-item">
+                    <a class="pure-button" href="https://github.com/zhengyin "><i class="fa fa-github-alt"></i> Github</a>
+                </li>
+                
+                <li class="nav-item">
+                    <a class="pure-button" href="http://zhengyin.github.io//index.xml"><i class="fa fa-rss"></i> rss</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+</div>
+
+
+    <div class="content pure-u-1 pure-u-md-3-4">
+        <div>
+            
+            <div class="posts">
+                <h1 class="content-subhead">10 Apr 2016, 09:07</h1>
+                <section class="post">
+                    <header class="post-header">
+
+                        <a href="http://zhengyin.github.io/post/php-process-manage-script/" class="post-title">写一个PHP进程管理脚本</a>
+
+                        <p class="post-meta">
+                            
+                            
+                        </p>
+                    </header>
+                    
+                    <div class="post-description">
+                        
+
+<h2 id="写一个php进程管理脚本:d023dbfb12a7f9e4fc02119184930127">写一个PHP进程管理脚本</h2>
+
+<p>进程管理脚本有Shell干嘛非要去折腾个PHP呢，这个问题让我来回答我会这样说。</p>
+
+<p>用PHP来写很爽好吗，而且如果你的应用程序是PHP，这样会更灵活。总该为折腾找个理由，以上便是。</p>
+
+<p>废话不多说，咱开始. 首先准备一些基础知识</p>
+
+<p>###Shell部分</p>
+
+<pre><code>1.如何后台运行一个PHP脚本，格式如下  &quot;PHP执行路径  脚本路径  &gt;&gt; 日志路径  &amp; &quot; 如：/opt/app/php/bin/php worker.php &gt;&gt; /tmp/log.log &amp; 
+2.查看进程：&quot;ps aux | grep worker.php | grep -v grep&quot;   (跟着上面的例子)
+3.取得进程PID: &quot;ps aux | grep worker.php | grep -v grep | awk '{print $2}'&quot; 
+4.杀死一个进程: kill -9 {Pid}
+</code></pre>
+
+<p>###PHP部分</p>
+
+<pre><code>1.PHP执行Shell函数： shell_exec($cmd);  $cmd 就是Shell命令 返回Shell输出流
+2.直接在PHP脚本中执行Shell: `ps aux | grep worker.php`  返回Shell输出流
+</code></pre>
+
+<p>有了上面这些基础，下面的代码就比较简单了</p>
+
+<p>###程序代码部分 WorkerAdmin.php</p>
+
+<pre><code>
+	&lt;?php
+	/**
+	 * @date 2015-07-17
+	 * @author zhengyin &lt;zhengyin.name@gmail.com&gt;
+	 * PHP 进程管理脚本
+	 */
+	class WorkerAdmin{
+		
+		const PHP_BIN = '/opt/app/php/bin/php';
+		
+		private static $process;
+		
+		private static $log;
+		
+		private static $num;
+		
+		private static $cmds = array('start','restart','stop');
+		/**
+		 * @param Array $argv
+		 */
+		public static function main($argv){
+			
+			self::$process = isset($argv[1])?$argv[1]:'';
+		
+			$cmd = isset($argv[2])?$argv[2]:'';
+			
+			self::$num = isset($argv[3])?intval($argv[3]):0;
+	
+			self::$log = isset($argv[4])?$argv[4]:'/dev/null';	//默认丢弃日志
+			//脚本不存在，或者不可执行
+			if(!file_exists(self::$process) || !is_executable(self::$process)){
+				echo self::$process.&quot; not exists\n&quot;;
+				echo chr(7);
+				exit;
+			}
+			//cmd 不正确
+			if(!in_array($cmd, self::$cmds)){
+				echo &quot;usage: &quot;.self::$process.&quot; &quot;.implode('|', self::$cmds).&quot; [num]\n&quot;;
+				echo chr(7);
+				exit;
+			}
+			
+			self::$cmd();
+		}
+		/**
+		 * 启动
+		 */
+		public static function start(){
+			if(self::$num&lt;1){
+				echo &quot;start num is invalid\n&quot;;
+				echo chr(7);
+				exit;
+			}else{
+				for ($i=0;$i&lt;self::$num;$i++){
+					self::runWorker();
+				}
+				echo &quot;start done\n&quot;;
+			}
+		}
+		/**
+		 * 重启
+		 */
+		public static function restart(){
+			$count = 0;
+			$pids = self::getWorkerPids();
+			for($i=0;$i&lt;count($pids);$i++){
+				self::killWorker($pids[$i]);
+				//杀掉老进程后，新启一个进程
+				$count++;
+				self::runWorker();
+				//缓冲1秒，避免瞬间杀死worker后，照成脚本无法工作
+				sleep(1);
+			}
+			//最后检查下，是否达到了需要的启动数量
+			if($count &lt;self::$num){
+				for($n=0;$n&lt;self::$num-$count;$n++){
+					self::runWorker();
+				}
+			}
+			echo &quot;restart done\n&quot;;
+		}
+		/**
+		 * 停止
+		 */
+		public static function stop(){
+			$pids = self::getWorkerPids();
+			for ($i=0;$i&lt;count($pids);$i++){
+				self::killWorker($pids[$i]);
+				//缓冲1秒，避免瞬间杀死worker后，照成脚本无法工作
+				sleep(1);	
+			}
+			echo &quot;stop done\n&quot;;
+		}
+		/**
+		 * 运行一个 worker
+		 */
+		private static function runWorker(){
+			$cmd = sprintf(&quot;%s %s &gt;&gt; %s &amp;&quot;,self::PHP_BIN,self::$process,self::$log);
+			echo $cmd.PHP_EOL;
+			shell_exec($cmd);
+		}
+		/**
+		 * 杀死一个 worker
+		 */
+		private static function killWorker($pid){
+			`kill -9 $pid`;
+			echo &quot;kill {$pid} done \n&quot;;
+		}
+		/**
+		 * 获取正在运行的worker pid 
+		 */
+		private static function getWorkerPids(){
+			
+			$cmd = 'ps aux | grep '.basename(self::$process).'| grep -v grep | grep -v '.basename(__FILE__).' | awk \'{print $2}\'';
+			$result = shell_exec($cmd);
+			$pids = array_filter(explode(&quot;\n&quot;, $result));
+			return $pids;
+		}
+	}
+	WorkerAdmin::main($argv);
+
+</code></pre>
+
+<p>在同级目录建立一个测试文件： worker.php 代码如下</p>
+
+<pre><code>
+	&lt;?php
+	while (true){
+		echo date('Y-m-d H:i:s').PHP_EOL;
+		sleep(3);
+	}
+
+</code></pre>
+
+<p>如果要对该 Worker 进行管理命令如下:</p>
+
+<pre><code>php WorkerAdmin.php worker.php start 10  启动10个进程，无日志
+php WorkerAdmin.php worker.php restart  重启
+php WorkerAdmin.php worker.php stop  停止
+</code></pre>
+
+<p>实际上如果你的守护进程和你的应用程序息息相关,完全可以走配置的文件进行更好的管理,这需要修改下 WorkerAdmin</p>
+
+<p>###修改后的 WorkerAdmin.php</p>
+
+<pre><code>
+	&lt;?php
+	/**
+	 * @date 2015-07-17
+	 * @author zhengyin &lt;zhengyin.name@gmail.com&gt;
+	 * PHP 进程管理脚本
+	 */
+	class WorkerAdmin{
+		
+		const PHP_BIN = '/opt/app/php/bin/php';
+		
+		private static $workerConfig = array(
+				'worker'=&gt;array(
+					'process'=&gt;'/data/webroot/izhengyin/public/test/shell/worker.php',
+					'num'=&gt;10,
+					'log'=&gt;'/tmp/worker.log'		
+				)
+		);
+		
+		private static $process;
+		
+		private static $log;
+		
+		private static $num;
+		
+		private static $cmds = array('start','restart','stop');
+		/**
+		 * @param Array $argv
+		 */
+		public static function main($argv){
+			
+			$name = isset($argv[1])?$argv[1]:'';
+			$cmd = isset($argv[2])?$argv[2]:'';
+			
+			//worker不存在
+			if(!isset(self::$workerConfig[$name])){
+				echo 'Worker:'.$name.&quot; not exists\n&quot;;
+				echo chr(7);
+				exit;
+			}
+			//取得相应的进程配置
+			self::$process = self::$workerConfig[$name]['process'];
+			self::$num = self::$workerConfig[$name]['num'];
+			self::$log = self::$workerConfig[$name]['log'];
+			
+			//脚本不存在，或者不可执行
+			if(!file_exists(self::$process) || !is_executable(self::$process)){
+				echo self::$process.&quot; not exists\n&quot;;
+				echo chr(7);
+				exit;
+			}
+			//cmd 不正确
+			if(!in_array($cmd, self::$cmds)){
+				echo &quot;usage: &quot;.self::$process.&quot; &quot;.implode('|', self::$cmds).&quot; [num]\n&quot;;
+				echo chr(7);
+				exit;
+			}
+			
+			self::$cmd();
+		}
+		/**
+		 * 启动
+		 */
+		public static function start(){
+			if(self::$num&lt;1){
+				echo &quot;start num is invalid\n&quot;;
+				echo chr(7);
+				exit;
+			}else{
+				for ($i=0;$i&lt;self::$num;$i++){
+					self::runWorker();
+				}
+				echo &quot;start done\n&quot;;
+			}
+		}
+		/**
+		 * 重启
+		 */
+		public static function restart(){
+			$count = 0;
+			$pids = self::getWorkerPids();
+			for($i=0;$i&lt;count($pids);$i++){
+				self::killWorker($pids[$i]);
+				//杀掉老进程后，新启一个进程
+				$count++;
+				self::runWorker();
+				//缓冲1秒，避免瞬间杀死worker后，照成脚本无法工作
+				sleep(1);
+			}
+			//最后检查下，是否达到了需要的启动数量
+			if($count &lt;self::$num){
+				for($n=0;$n&lt;self::$num-$count;$n++){
+					self::runWorker();
+				}
+			}
+			echo &quot;restart done\n&quot;;
+		}
+		/**
+		 * 停止
+		 */
+		public static function stop(){
+			$pids = self::getWorkerPids();
+			for ($i=0;$i&lt;count($pids);$i++){
+				self::killWorker($pids[$i]);
+				//缓冲1秒，避免瞬间杀死worker后，照成脚本无法工作
+				sleep(1);	
+			}
+			echo &quot;stop done\n&quot;;
+		}
+		/**
+		 * 运行一个 worker
+		 */
+		private static function runWorker(){
+			$cmd = sprintf(&quot;%s %s &gt;&gt; %s &amp;&quot;,self::PHP_BIN,self::$process,self::$log);
+			echo $cmd.PHP_EOL;
+			shell_exec($cmd);
+		}
+		/**
+		 * 杀死一个 worker
+		 */
+		private static function killWorker($pid){
+			`kill -9 $pid`;
+			echo &quot;kill {$pid} done \n&quot;;
+		}
+		/**
+		 * 获取正在运行的worker pid 
+		 */
+		private static function getWorkerPids(){
+			
+			$cmd = 'ps aux | grep '.basename(self::$process).'| grep -v grep | grep -v '.basename(__FILE__).' | awk \'{print $2}\'';
+			$result = shell_exec($cmd);
+			$pids = array_filter(explode(&quot;\n&quot;, $result));
+			return $pids;
+		}
+	}
+	WorkerAdmin::main($argv);
+
+</code></pre>
+
+<p>下面你就可以通过如下命令管理Worker了:</p>
+
+<pre><code>php WorkerAdmin.php worker start 启动worker
+php WorkerAdmin.php worker restart  重启
+php WorkerAdmin.php worker stop  停止
+</code></pre>
+
+<p>程序里面的 WorkerConfig 你完全可以把它摘除到外部，比如你使用框架，你可以把摘除到你的应用配置里，这里就不展开讨论了。</p>
+
+<p>So , 这篇文章就到此为止。</p>
+
+
+                    </div>
+                    
+                        <div class="post-share">
+                            <div class="bdsharebuttonbox"><a href="#" class="bds_more" data-cmd="more"></a><a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a><a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a><a href="#" class="bds_tqq" data-cmd="tqq" title="分享到腾讯微博"></a><a href="#" class="bds_renren" data-cmd="renren" title="分享到人人网"></a><a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a></div>
+<script>window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdPic":"","bdStyle":"0","bdSize":"16"},"share":{}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=89860593.js?cdnversion='+~(-new Date()/36e5)];</script>
+                        </div>
+                    
+                    
+<div class="ds-thread" data-thread-key="写一个PHP进程管理脚本" data-title="写一个PHP进程管理脚本" data-url=""></div>
+
+
+<script type="text/javascript">
+var duoshuoQuery = {short_name:"izhengyin"};
+	(function() {
+		var ds = document.createElement('script');
+		ds.type = 'text/javascript';ds.async = true;
+		ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+		ds.charset = 'UTF-8';
+		(document.getElementsByTagName('head')[0] 
+		 || document.getElementsByTagName('body')[0]).appendChild(ds);
+	})();
+	</script>
+
+
+                </section>
+            </div>
+            <div class="footer">
+    <div class="pure-menu pure-menu-horizontal pure-menu-open">
+        <ul>
+            <li>Powered by <a class="hugo" href="http://hugo.spf13.com/" target="_blank">hugo</a></li>
+        </ul>
+    </div>
+</div>
+<script src="http://zhengyin.github.io//js/all.min.js"></script>
+        </div>
+    </div>
+</div>
+
+
+<script>
+(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+ga('create', 'UA-xxxxxx-xx', 'auto');
+ga('send', 'pageview');
+
+</script>
+
+</body>
+</html>

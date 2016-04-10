@@ -2,18 +2,19 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Posts on 郑印</title>
-    <link>http://localhost:1313/post/</link>
+    <link>http://zhengyin.github.io/post/</link>
     <description>Recent content in Posts on 郑印</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <atom:link href="http://localhost:1313/post/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sun, 10 Apr 2016 09:07:06 +0800</lastBuildDate>
+    <atom:link href="http://zhengyin.github.io/post/index.xml" rel="self" type="application/rss+xml" />
     
     <item>
       <title>Socket.io的实时竞拍系统实现</title>
-      <link>http://localhost:1313/post/socketio-bid/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <link>http://zhengyin.github.io/post/socketio-bid/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
       
-      <guid>http://localhost:1313/post/socketio-bid/</guid>
+      <guid>http://zhengyin.github.io/post/socketio-bid/</guid>
       <description>&lt;p&gt;某天张同学来到了一个拍卖网站，看中了一件心仪的拍品，于是他愉快的参与了竞价，并处于了领先的地位，随后张同学死死盯住拍品倒计时和领先者，在倒计时结束后发现领先者还是他自己，正当他欣喜若狂准备付款时，页面刷新发现拍品已被别人抢走。后来当张同学在次来到网站，便长了记性，开始无止境的F5~&lt;/p&gt;
 
 &lt;p&gt;当然我们不能这样折腾我们的用户，那么如何实现拍品信息实时更新？ 要解决这个需求，实际上需要服务端主动“推” 信息到客户端。而客户端想要得到服务端推送的信息，实际上需要和服务端建立一个长连接，这样服务端才能通过这个连接把信息传递到客户端，也就是所谓“推”的概念，下面有篇文章详细介绍了WEB推送的系统的客户端实现方式：&lt;/p&gt;
@@ -180,10 +181,10 @@
     
     <item>
       <title>Yaf 框架视频教程</title>
-      <link>http://localhost:1313/post/yaf-framework/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <link>http://zhengyin.github.io/post/yaf-framework/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
       
-      <guid>http://localhost:1313/post/yaf-framework/</guid>
+      <guid>http://zhengyin.github.io/post/yaf-framework/</guid>
       <description>
 
 &lt;h1 id=&#34;yaf-框架视频教程:a35b09ceae5d32b3a4552009c03ede68&#34;&gt;Yaf 框架视频教程&lt;/h1&gt;
@@ -249,10 +250,10 @@
     
     <item>
       <title>mysql 主从复制，读写分离</title>
-      <link>http://localhost:1313/post/mysql-master-slave/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <link>http://zhengyin.github.io/post/mysql-master-slave/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
       
-      <guid>http://localhost:1313/post/mysql-master-slave/</guid>
+      <guid>http://zhengyin.github.io/post/mysql-master-slave/</guid>
       <description>
 
 &lt;h2 id=&#34;mysql-主从复制-读写分离:f281d2723fb126937526c018d1f3d9eb&#34;&gt;mysql 主从复制，读写分离&lt;/h2&gt;
@@ -711,10 +712,10 @@ mysql&amp;gt; select * from user;
     
     <item>
       <title>php操作mongodb笔记</title>
-      <link>http://localhost:1313/post/mongodb-note/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <link>http://zhengyin.github.io/post/mongodb-note/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
       
-      <guid>http://localhost:1313/post/mongodb-note/</guid>
+      <guid>http://zhengyin.github.io/post/mongodb-note/</guid>
       <description>&lt;p&gt;大致把它分为了如下几块记录&lt;/p&gt;
 
 &lt;ul&gt;
@@ -740,10 +741,10 @@ $o-&amp;gt;$act();
     
     <item>
       <title>写一个PHP进程管理脚本</title>
-      <link>http://localhost:1313/post/php-process-manage-script/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <link>http://zhengyin.github.io/post/php-process-manage-script/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
       
-      <guid>http://localhost:1313/post/php-process-manage-script/</guid>
+      <guid>http://zhengyin.github.io/post/php-process-manage-script/</guid>
       <description>
 
 &lt;h2 id=&#34;写一个php进程管理脚本:d023dbfb12a7f9e4fc02119184930127&#34;&gt;写一个PHP进程管理脚本&lt;/h2&gt;
@@ -1072,10 +1073,10 @@ php WorkerAdmin.php worker stop  停止
     
     <item>
       <title>在Yaf中使用Yar</title>
-      <link>http://localhost:1313/post/yaf-yar/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <link>http://zhengyin.github.io/post/yaf-yar/</link>
+      <pubDate>Sun, 10 Apr 2016 09:07:06 +0800</pubDate>
       
-      <guid>http://localhost:1313/post/yaf-yar/</guid>
+      <guid>http://zhengyin.github.io/post/yaf-yar/</guid>
       <description>
 
 &lt;h2 id=&#34;在yaf中使用yar:7ca2c6e4bdcb04df6c1f3d2a41a1f959&#34;&gt;在Yaf中使用Yar&lt;/h2&gt;
