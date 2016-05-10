@@ -26,7 +26,7 @@ Nginx也有相应的模块进行服务端的支持：
 那么根据这三个场景，能够确认推送的一个大概思路，也就是 “当拍品出价成功后，取得最新的拍品信息，推送给关注该拍品的所有用户”，基于这个思路可以确定一个大概的推送流程图:
 
   
-![推送流程图.png](http://upload-images.jianshu.io/upload_images/1639948-8c0ede3a86d71389.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+![推送流程图.png](/images/1639948-8c0ede3a86d71389.png)
 
 这个流程图中分为4个部分：
 
@@ -46,60 +46,60 @@ Nginx也有相应的模块进行服务端的支持：
 
 ```
 
-      var http = require("http");
-      http.globalAgent.maxSockets = Infinity;
-      var koa = require('koa');
-      var app = koa();
-      var bodyParser = require('koa-bodyparser');
-      var route = require('koa-route');
-      var io = require('socket.io');
-      var ioRedis = require('socket.io-redis');
-      var ioEmitter = require('socket.io-emitter')({ host: '127.0.0.1', port: '6379' });
-      var server = http.createServer(app.callback());
+    var http = require("http");
+    http.globalAgent.maxSockets = Infinity;
+    var koa = require('koa');
+    var app = koa();
+    var bodyParser = require('koa-bodyparser');
+    var route = require('koa-route');
+    var io = require('socket.io');
+    var ioRedis = require('socket.io-redis');
+    var ioEmitter = require('socket.io-emitter')({ host: '127.0.0.1', port: '6379' });
+    var server = http.createServer(app.callback());
 
-      io = io(server);
+    io = io(server);
 
-      io.adapter(ioRedis({ host :'127.0.0.1', prot :'6379'}));
+    io.adapter(ioRedis({ host :'127.0.0.1', prot :'6379'}));
 
-      /**************  推送API ******************/
-      app.use(bodyParser());
-      app.use(route.post('/pub', function *(next){
+    /**************  推送API ******************/
+    app.use(bodyParser());
+    app.use(route.post('/pub', function *(next){
 
-          var data = this.request.body;
+        var data = this.request.body;
 
-          if(!data || typeof data != 'object'){
-              this.throw('data error', 400);
-          }
+        if(!data || typeof data != 'object'){
+            this.throw('data error', 400);
+        }
 
-          var room = data.itemId;
-          var channel = data.channel;
-          var message = data.message;
+        var room = data.itemId;
+        var channel = data.channel;
+        var message = data.message;
 
-          ioEmitter.to(room).emit(channel,message);   
+        ioEmitter.to(room).emit(channel,message);   
 
-          this.body = 'ok';
-          
-      }));
-      app.use(function *(){
-        this.response.status = 404;
-      })
-      /*****************************************/
+        this.body = 'ok';
+        
+    }));
+    app.use(function *(){
+      this.response.status = 404;
+    })
+    /*****************************************/
 
-      /*************Socket.io Server ***********/
-      io.use(function(socket,next){
-          var itemId = socket.handshake.query.itemId;
-          socket.room = itemId;
-          return next();
-      });
-      io.on('connection',function(socket){
-          socket.join(socket.room);
-      });
-      /*****************************************/
-
-
+    /*************Socket.io Server ***********/
+    io.use(function(socket,next){
+        var itemId = socket.handshake.query.itemId;
+        socket.room = itemId;
+        return next();
+    });
+    io.on('connection',function(socket){
+        socket.join(socket.room);
+    });
+    /*****************************************/
 
 
-      server.listen(3000,function(){});
+
+
+    server.listen(3000,function(){});
 
 ```
 
