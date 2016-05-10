@@ -45,61 +45,57 @@ Nginx也有相应的模块进行服务端的支持：
 
 
 ```
+  var http = require("http");
+  http.globalAgent.maxSockets = Infinity;
+  var koa = require('koa');
+  var app = koa();
+  var bodyParser = require('koa-bodyparser');
+  var route = require('koa-route');
+  var io = require('socket.io');
+  var ioRedis = require('socket.io-redis');
+  var ioEmitter = require('socket.io-emitter')({ host: '127.0.0.1', port: '6379' });
+  var server = http.createServer(app.callback());
 
-    var http = require("http");
-    http.globalAgent.maxSockets = Infinity;
-    var koa = require('koa');
-    var app = koa();
-    var bodyParser = require('koa-bodyparser');
-    var route = require('koa-route');
-    var io = require('socket.io');
-    var ioRedis = require('socket.io-redis');
-    var ioEmitter = require('socket.io-emitter')({ host: '127.0.0.1', port: '6379' });
-    var server = http.createServer(app.callback());
+  io = io(server);
 
-    io = io(server);
+  io.adapter(ioRedis({ host :'127.0.0.1', prot :'6379'}));
 
-    io.adapter(ioRedis({ host :'127.0.0.1', prot :'6379'}));
+  /**************  推送API ******************/
+  app.use(bodyParser());
+  app.use(route.post('/pub', function *(next){
 
-    /**************  推送API ******************/
-    app.use(bodyParser());
-    app.use(route.post('/pub', function *(next){
+      var data = this.request.body;
 
-        var data = this.request.body;
+      if(!data || typeof data != 'object'){
+          this.throw('data error', 400);
+      }
 
-        if(!data || typeof data != 'object'){
-            this.throw('data error', 400);
-        }
+      var room = data.itemId;
+      var channel = data.channel;
+      var message = data.message;
 
-        var room = data.itemId;
-        var channel = data.channel;
-        var message = data.message;
+      ioEmitter.to(room).emit(channel,message);   
 
-        ioEmitter.to(room).emit(channel,message);   
+      this.body = 'ok';
+      
+  }));
+  app.use(function *(){
+    this.response.status = 404;
+  })
+  /*****************************************/
 
-        this.body = 'ok';
-        
-    }));
-    app.use(function *(){
-      this.response.status = 404;
-    })
-    /*****************************************/
+  /*************Socket.io Server ***********/
+  io.use(function(socket,next){
+      var itemId = socket.handshake.query.itemId;
+      socket.room = itemId;
+      return next();
+  });
+  io.on('connection',function(socket){
+      socket.join(socket.room);
+  });
+  /*****************************************/
 
-    /*************Socket.io Server ***********/
-    io.use(function(socket,next){
-        var itemId = socket.handshake.query.itemId;
-        socket.room = itemId;
-        return next();
-    });
-    io.on('connection',function(socket){
-        socket.join(socket.room);
-    });
-    /*****************************************/
-
-
-
-
-    server.listen(3000,function(){});
+  server.listen(3000,function(){});
 
 ```
 
@@ -119,16 +115,15 @@ Nginx也有相应的模块进行服务端的支持：
 
  * 服务端代码(PHP)
 
-```
-        
+```     
 	private function http($data){
-               /** 
-                    $data = array(
-                          'itemId'=>100,            //指明推送拍品
-                          'channel'=>'auction',  //指明推送到的渠道
-                          'message'=>array( )  //最新的拍品信息
-                    );
-               */
+     /** 
+          $data = array(
+                'itemId'=>100,            //指明推送拍品
+                'channel'=>'auction',  //指明推送到的渠道
+                'message'=>array( )  //最新的拍品信息
+          );
+     */
 
 		$server = $this->getServer();  // http://127.0.0.1:3000/pub
 		$ch = curl_init();
