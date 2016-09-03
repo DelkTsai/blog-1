@@ -9,3 +9,62 @@ disqusShortname = "xxxx"
   githubName = "zhengyin"
   description = "85后程序员，目前在写PHP和Nodejs"
   google_analytics = "UA-xxxxxx-xx"
+
+
+baseurl = "http://izhengyin.com/"
+languageCode = "zh-cn"
+title = "izhengyin.com"
+theme = "hugo-material-docs"
+metadataformat = "yaml"
+canonifyurls = true
+# Enable Google Analytics by entering your tracking id
+googleAnalytics = ""
+
+[params]
+	# General information
+	author = "郑印"
+	description = "85后程序员,专注Web应用开发. PHP、Java、Nodejs "
+	copyright = "Released under the MIT license"
+
+	# Repository
+	provider = "GitHub"
+	repo_url = "https://github.com/zhengyin"
+
+	version = "1.0.0"
+	logo = "images/logo.jpg"
+	favicon = ""
+
+	permalink = "#"
+
+	# Custom assets
+	custom_css = []
+	custom_js  = []
+
+	# Syntax highlighting theme
+	highlight_css  = ""
+
+	[params.palette]
+    	primary = "red"
+    	accent  = "light-green"
+
+    [params.font]
+    	text = "Ubuntu"
+    	code = "Ubuntu Mono"
+
+
+[social]
+	twitter = ""
+	github  = "zhengyin"
+
+
+[[menu.main]]
+	name   = "博文分类"
+	url    = "/"
+	weight = 0
+
+
+[blackfriday]
+	smartypants	= true
+	fractions = true
+	smartDashes = true
+	plainIDAnchors = true
