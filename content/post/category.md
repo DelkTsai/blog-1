@@ -10,9 +10,10 @@ weight: 0
 
 > 文章索引
 
-## PHP
--  [在Yaf中使用Yar](/post/php/yaf-yar/)
 
-## Nodejs
-- Socket.io的实时竞拍系统实现
+## [在Yaf中使用Yar](/post/php/yaf-yar/)
+
+
+## [Socket.io的实时竞拍系统实现](/post/nodejs/socketio-bid/)
+
 

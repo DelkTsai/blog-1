@@ -45,7 +45,7 @@ googleAnalytics = ""
 
 
 [[menu.main]]
-	name   = "博文分类"
+	name   = "文章索引"
 	url    = "/post/category/"
 	weight = 0
 
