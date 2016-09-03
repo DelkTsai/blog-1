@@ -51,7 +51,7 @@ googleAnalytics = ""
 
 [[menu.main]]
 	name   = "测试"
-	url    = "/post/test.html"
+	url    = "/post/test/"
 	weight = 1
 
 [blackfriday]
