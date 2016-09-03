@@ -1,7 +1,9 @@
 +++
 date        = "2016-09-3T09:07:06+08:00"
 title       = "郑印 - izhengyin.com"
+type: index
 weight = 1
+
 +++
 
 > 博文索引

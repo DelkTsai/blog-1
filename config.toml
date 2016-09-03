@@ -14,8 +14,8 @@ googleAnalytics = ""
 	copyright = "Released under the MIT license"
 
 	# Repository
-	provider = "GitHub"
-	repo_url = "https://github.com/zhengyin"
+	#provider = "GitHub"
+	#repo_url = "https://github.com/zhengyin"
 
 	version = ""
 	logo = "images/logo.jpg"
