@@ -1,6 +1,6 @@
 baseurl = "http://izhengyin.com/"
 languageCode = "zh-cn"
-title = "分享使人愉悦"
+title = "izhengyin.com 分享使人愉悦"
 theme = "hugo-material-docs"
 metadataformat = "yaml"
 canonifyurls = true
