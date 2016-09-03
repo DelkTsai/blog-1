@@ -1,5 +1,6 @@
 +++
 title       = "郑印 - izhengyin.com"
+type: index
 weight = 1
 +++
 
