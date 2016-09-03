@@ -1,16 +1,8 @@
-+++
-date        = "2016-09-3T09:07:06+08:00"
-title       = "郑印 - izhengyin.com"
+---
+date: 2016-03-08T21:07:13+01:00
+title: Material for Hugo
 type: index
-weight = 1
+weight: 0
+---
 
-+++
-
-> 博文索引
-
-### PHP
--  [在Yaf中使用Yar](/post/php/yaf-yar/)
-
-### Nodejs
-- Socket.io的实时竞拍系统实现
-
+## Beautiful documentation
