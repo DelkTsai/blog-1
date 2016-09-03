@@ -10,7 +10,7 @@ googleAnalytics = ""
 [params]
 	# General information
 	author = "郑印"
-	description = "85后程序员,专注Web应用开发. PHP、Java、Nodejs "
+	description = "85后程序员,专注Web应用开发."
 	copyright = "Released under the MIT license"
 
 	# Repository
