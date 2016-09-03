@@ -1,8 +1,9 @@
-+++
-title       = "郑印 - izhengyin.com"
+---
+date: 2016-03-08T21:07:13+01:00
+title: 郑印 - izhengyin.com
 type: index
-weight = 1
-+++
+weight: 0
+---
 
 > 博文索引
 
