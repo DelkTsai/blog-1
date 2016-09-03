@@ -5,7 +5,9 @@ type: index
 weight: 0
 ---
 
+> 手机访问
 
+![image](/upload/izhengyin-com.png)
 
 
 ## [在Yaf中使用Yar](/post/php/yaf-yar/)
