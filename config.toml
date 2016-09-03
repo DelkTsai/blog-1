@@ -1,17 +1,4 @@
 baseurl = "http://izhengyin.com/"
-languageCode = "en-us"
-title = "郑印"
-theme = "purehugo"
-Paginate = 10
-disqusShortname = "xxxx"
-
-[params]
-  githubName = "zhengyin"
-  description = "85后程序员，目前在写PHP和Nodejs"
-  google_analytics = "UA-xxxxxx-xx"
-
-
-baseurl = "http://izhengyin.com/"
 languageCode = "zh-cn"
 title = "izhengyin.com"
 theme = "hugo-material-docs"
