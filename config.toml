@@ -49,6 +49,10 @@ googleAnalytics = ""
 	url    = "/post/index.html"
 	weight = 0
 
+[[menu.main]]
+	name   = "测试"
+	url    = "/post/test.html"
+	weight = 1
 
 [blackfriday]
 	smartypants	= true
