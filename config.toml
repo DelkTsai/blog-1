@@ -46,13 +46,10 @@ googleAnalytics = ""
 
 [[menu.main]]
 	name   = "博文分类"
-	url    = "/post/index.html"
+	url    = "/post/category/"
 	weight = 0
 
-[[menu.main]]
-	name   = "测试"
-	url    = "/post/test/"
-	weight = 1
+
 
 [blackfriday]
 	smartypants	= true
