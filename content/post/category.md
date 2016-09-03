@@ -15,4 +15,5 @@ weight: 0
 
 
 > 手机访问
-<img style="border:1px solid #f2f2f2;" width="100" src="/upload/izhengyin-com.png"/>
+
+<img style="border:1px solid #f2f2f2;padding:5px;" width="100" src="/upload/izhengyin-com.png"/>
