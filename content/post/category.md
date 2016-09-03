@@ -1,11 +1,9 @@
 ---
 date: 2016-03-08T21:07:13+01:00
-title: 郑印 - izhengyin.com
+title: izhengyin.com - 文章索引
 type: index
 weight: 0
 ---
-
-> 博文索引
 
 ## PHP
 -  [在Yaf中使用Yar](/post/php/yaf-yar/)
