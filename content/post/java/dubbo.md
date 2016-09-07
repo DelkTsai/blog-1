@@ -27,7 +27,7 @@ Dubbo 官方推荐使用 zookeeper 注册中心用于线上生产环境，那么
 
 > 参考 [Dubbo 管理员指南 ](https://github.com/alibaba/dubbo/wiki/admin-guide-install-manual)
 
-* 安装:
+- 安装:
 
 ```shell
 wget http://www.apache.org/dist//zookeeper/zookeeper-3.3.3/zookeeper-3.3.3.tar.gz
@@ -36,7 +36,7 @@ cd zookeeper-3.3.3
 cp conf/zoo_sample.cfg conf/zoo.cfg
 ```
 
-* 配置:
+- 配置:
 
 ```shell
 vi conf/zoo.cfg
@@ -80,19 +80,19 @@ myid指明自己的id，对应上面zoo.cfg中server.后的数字，第一台的
 1
 ```
 
-* 启动:
+- 启动:
 
 ```shell
 ./bin/zkServer.sh start
 ```
 
-* 停止:
+- 停止:
 
 ```shell
 ./bin/zkServer.sh stop
 ```
 
-* 命令行: (See: http://zookeeper.apache.org/doc/r3.3.3/zookeeperAdmin.html)
+- 命令行: (See: http://zookeeper.apache.org/doc/r3.3.3/zookeeperAdmin.html)
 
 ```shell
 telnet 127.0.0.1 2181
