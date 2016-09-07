@@ -6,8 +6,6 @@ description = "Dubbo-入门示例"
 weight = 94
 +++
 
-# Dubbo-入门示例
-
 这篇文章是我在学习使用Dubbo搭建的一个入门示例，在查看该示例之前，你应该先从整体上了解一下 Dubbo .
 
 - [Dubbo 官网](http://dubbo.io/) 
