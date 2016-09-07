@@ -5,6 +5,8 @@ type: index
 weight: 0
 ---
 
+## [Log4j2 - 简单使用](/post/java/Log4j2/)
+
 ## [Dubbo-入门示例](/post/java/dubbo/)
 
 ## [Maven 使用笔记](/post/java/maven/) 
