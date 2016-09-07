@@ -8,10 +8,13 @@ weight = 95
 
 
 ### Maven命令
+
 - 创建一个简单的Java工程
+
 ```
 mvn archetype:generate -DgroupId=com.izhengyin.maven -DartifactId=quickstart -DarchetypeArtifactId=maven-archetype-quickstart -DinteractiveMode=false
 ```
+
 - 创建一个java的web工程
 ```
 mvn archetype:generate -DgroupId=com.izhengyin.maven -DartifactId=quickstartWebApp -DarchetypeArtifactId=maven-archetype-webapp -DinteractiveMode=false
