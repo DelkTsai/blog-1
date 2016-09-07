@@ -4,6 +4,7 @@ title: 文章索引
 type: index
 weight: 0
 ---
+## [Maven 使用笔记](/post/java/maven/) 
 
 ## [Socket.io的实时竞拍系统实现](/post/nodejs/socketio-bid/) 
 
