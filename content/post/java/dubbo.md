@@ -188,7 +188,7 @@ public interface DemoService {
 }
 ```
 
-###### 新建  DmeoServiceImpl 实现 DmeoService 接口内容如下：
+#### 新建  DmeoServiceImpl 实现 DmeoService 接口内容如下：
 
 ```
 package com.izhengyin.dubbo;
@@ -202,7 +202,7 @@ public class DemoServiceImpl implements DemoService {
 }
 ```
 
-###### 修改 App 的 main 方法用于启动 provider
+#### 修改 App 的 main 方法用于启动 provider
 
 ```
 package com.izhengyin.dubbo;
@@ -233,7 +233,7 @@ public class App
 
 ```
 
-###### 启动provider
+#### 启动provider
 
 ```
  mvn exec:java -Dexec.mainClass="com.izhengyin.dubbo.App" -Dexec.cleanupDaemonThreads=false
@@ -372,7 +372,7 @@ public class App
 }
 ```
 
-###### 启动 consumer
+#### 启动 consumer
 
 ```
  mvn exec:java -Dexec.mainClass="com.izhengyin.dubbo.App" -Dexec.cleanupDaemonThreads=false

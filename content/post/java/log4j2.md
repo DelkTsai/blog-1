@@ -7,9 +7,9 @@ description = "Log4j2 - 简单使用"
 weight = 93
 +++
 
-#### 配置maven
+### 配置maven
 
-###### 参考: http://logging.apache.org/log4j/2.x/maven-artifacts.html
+#### 参考: http://logging.apache.org/log4j/2.x/maven-artifacts.html
 
 ```
 <dependencies>
@@ -42,10 +42,10 @@ weight = 93
   
 ```
 
-#### 配置log4j2.xml 放置于项目 classPath 目录
+### 配置log4j2.xml 放置于项目 classPath 目录
 
 
-###### log4j2.xml
+#### log4j2.xml
 ```
 <?xml version="1.0" encoding="UTF-8"?>
 	<Configuration status="WARN">
@@ -75,9 +75,9 @@ weight = 93
     - Logger 自定义一个日志段 name 指定 日志段的名称，改名称由 LoggerFactory.getLogger(==name==); 传入
         -  AppenderRef 指定输出目标 ref 的名称与 Appenders 里面的配置段相匹配
 
-#### 创建演示代码
+### 创建演示代码
 
-###### 包：com.izhengyin.maven
+#### 包：com.izhengyin.maven
 
 
 ```
@@ -138,9 +138,9 @@ public class Slf4jDemo {
 
 ```
 
-#### 运行演示代码
+### 运行演示代码
 
-###### 输出结果
+#### 输出结果
 
 ```
 global 21:54:58.824 [main] WARN  com.izhengyin.maven.Slf4jDemo - [warn message]
