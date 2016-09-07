@@ -178,7 +178,7 @@ Path: provider/src/main/resources/META-INF/spring/provider.xml
 </beans>
 ```
 
-###### 新建 DmeoService 接口内容如下：
+> 新建 DmeoService 接口内容如下：
 
 ```
 package com.izhengyin.dubbo;
