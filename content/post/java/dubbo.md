@@ -264,15 +264,15 @@ Started
 
 ### 服务的消费者 consumer 
 
-使用 maven 构建一个 Quick start 项目 , 起名为 consumer 
+- 使用 maven 构建一个 Quick start 项目 , 起名为 consumer 
 
-命令：
+- 命令：
 
 ```
 mvn archetype:generate -DgroupId=com.izhengyin.dubbo -DartifactId=ocnsumer -DarchetypeArtifactId=maven-archetype-quickstart -DinteractiveMode=false
 ```
 
-修改 pom.xml 如下:
+- 修改 pom.xml 如下:
 
 
 ```
@@ -311,11 +311,14 @@ mvn archetype:generate -DgroupId=com.izhengyin.dubbo -DartifactId=ocnsumer -Darc
 
 ```
 
-新建一个 consumer.xml 的提供最配置文件
 
-Path: consumer/src/main/resources/META-INF/spring/consumer.xml
 
 ```
+- 新建一个 consumer.xml 的提供最配置文件
+  - Path: consumer/src/main/resources/META-INF/spring/consumer.xml
+
+
+
 <?xml version="1.0" encoding="UTF-8"?>
 <beans xmlns="http://www.springframework.org/schema/beans"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -337,7 +340,7 @@ Path: consumer/src/main/resources/META-INF/spring/consumer.xml
 
 ```
 
-新建 DmeoService 接口内容如下：
+- 新建 DmeoService 接口内容如下：
 
 ```
 package com.izhengyin.dubbo;
@@ -347,7 +350,7 @@ public interface DemoService {
 }
 ```
 
-修改 App 的 main 方法用于启动 consumer
+- 修改 App 的 main 方法用于启动 consumer
 
 ```
 package com.izhengyin.dubbo;
