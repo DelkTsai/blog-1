@@ -314,8 +314,9 @@ mvn archetype:generate -DgroupId=com.izhengyin.dubbo -DartifactId=ocnsumer -Darc
 
 
 ```
-- 新建一个 consumer.xml 的提供最配置文件
-  - Path: consumer/src/main/resources/META-INF/spring/consumer.xml
+
+> 新建一个 consumer.xml 的提供最配置文件
+> Path: consumer/src/main/resources/META-INF/spring/consumer.xml
 
 
 
@@ -340,7 +341,7 @@ mvn archetype:generate -DgroupId=com.izhengyin.dubbo -DartifactId=ocnsumer -Darc
 
 ```
 
-- 新建 DmeoService 接口内容如下：
+> 新建 DmeoService 接口内容如下：
 
 ```
 package com.izhengyin.dubbo;
@@ -350,7 +351,7 @@ public interface DemoService {
 }
 ```
 
-- 修改 App 的 main 方法用于启动 consumer
+> 修改 App 的 main 方法用于启动 consumer
 
 ```
 package com.izhengyin.dubbo;
@@ -381,7 +382,7 @@ public class App
  mvn exec:java -Dexec.mainClass="com.izhengyin.dubbo.App" -Dexec.cleanupDaemonThreads=false
 ```
 
-如果运行正常，你将看到类似如下输出：
+> 如果运行正常，你将看到类似如下输出：
 
 ```
 [INFO] Scanning for projects...
