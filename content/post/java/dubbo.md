@@ -74,6 +74,7 @@ vi myid
 ```
 
 myid指明自己的id，对应上面zoo.cfg中server.后的数字，第一台的内容为1，第二台的内容为2，内容如下：
+
 > myid
 
 ```
