@@ -148,9 +148,8 @@ mvn archetype:generate -DgroupId=com.izhengyin.dubbo -DartifactId=provider -Darc
 
 ```
 
-###### 新建一个 provider.xml 的提供最配置文件
-
-Path: provider/src/main/resources/META-INF/spring/provider.xml
+> 新建一个 provider.xml 的提供最配置文件
+> Path: provider/src/main/resources/META-INF/spring/provider.xml
 
 ```
 <?xml version="1.0" encoding="UTF-8"?>
