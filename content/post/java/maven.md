@@ -54,6 +54,7 @@ mvn install:install-file -DgroupId=<groupId> -DartifactId=<artifactId> -Dversion
 - 查看插件的帮助信息
     - mvn <plug-in>:help，比如：mvn dependency:help 或 mvn ant:help 等等。
 - 运行某个类的主方法
+
 ```
 mvn exec:java -Dexec.mainClass="com.izhengyin.App" -Dexec.args="Hello maven !"
 public class App
